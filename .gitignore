@@ -1,0 +1,25 @@
+# 빌드 산출물
+/RESTGo
+
+# 분석 출력
+/zpicture/
+
+# Python venv
+venv/
+__pycache__/
+*.pyc
+
+# 자격증명 (AES 암호화돼 있지만 키와 함께 노출 시 위험)
+config.yaml
+
+# 도구 설정
+.telegram/
+.vscode/
+.claude/
+.idea/
+
+# OS·에디터 임시 파일
+.DS_Store
+*.swp
+*.swo
+*~

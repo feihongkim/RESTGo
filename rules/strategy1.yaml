@@ -1,0 +1,130 @@
+strategies:
+  # ─── SingleDef (DefCount == 1): 엄격한 순서 (더 많은 조건 → 먼저 평가) ───
+
+  # Strategy 3 — S01 + TimingLess (가장 엄격)
+  - name: "S03_SingleDefStrictBuy_Option2"
+    def_count: 1
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMainboxCloserThanCurrentPosition
+      - IsSingleBreakout
+      - IsBoxConditionValid
+      - IsBoxCountBetween2
+      - IsMainboxPriceAboveMa60OrMa120
+      - IsMainboxConditionValid
+      - IsBoxDensityValidByDistribution
+      - MainBoxPositionBasedTiming
+      - MainBoxPositionBasedTimingLess
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    any_of:
+      - HasLowTouchedMa20
+      - IsMa20NearMa60Complex
+    signal: "즉시매수"
+
+  # Strategy 1 — 표준 SingleDef
+  - name: "S01_SingleDefBuy"
+    def_count: 1
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMainboxCloserThanCurrentPosition
+      - IsSingleBreakout
+      - IsBoxConditionValid
+      - IsBoxCountBetween2
+      - IsMainboxPriceAboveMa60OrMa120
+      - IsMainboxConditionValid
+      - IsBoxDensityValidByDistribution
+      - MainBoxPositionBasedTiming
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    any_of:
+      - HasLowTouchedMa20
+      - IsMa20NearMa60Complex
+    signal: "즉시매수"
+
+  # Strategy 23 — 4∩8 교집합 (S01보다 완화: MA/밀도/타이밍 조건 없음)
+  - name: "S23_Intersection_4n8"
+    def_count: 1
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMainboxCloserThanCurrentPosition
+      - IsSingleBreakout
+      - IsBoxConditionValid
+      - IsBoxCountBetween2
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    any_of:
+      - HasLowTouchedMa20
+      - IsMa20NearMa60Complex
+    signal: "즉시매수"
+
+  # Strategy 8 — 거리 조건 완화 (MainboxDistance×2, BoxCount≤5)
+  - name: "S08_SingleDefRelaxedDistanceBuy_Option3"
+    def_count: 1
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMainboxDistanceTwiceOrMore
+      - IsSingleBreakout
+      - IsBoxConditionValid
+      - IsBoxCountBetween5
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    any_of:
+      - HasLowTouchedMa20
+      - IsMa20NearMa60Complex
+    signal: "즉시매수"
+
+  # Strategy 4 — 연약지반 (최완화)
+  - name: "S04_SingleDefWeakFoundationBuy_Option2"
+    def_count: 1
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMainboxCloserThanCurrentPosition
+      - IsBoxCountBetween2
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "연약지반매수"
+
+  # ─── MultiDef (DefCount >= 2): 엄격한 순서 ───
+
+  # Strategy 5 — 표준 MultiDef + 관통
+  - name: "S05_MultiDefStandardBuy_Option2"
+    def_count_min: 2
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMa60StrongerThanMa120By2Percent
+      - IsBoxDensityValidByDistribution
+      - MultiDefDamCountMax2
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "MD즉시매수"
+
+  # Strategy 6 — 완화된 DamCount + 관통 → 대기 신호
+  # (S11과 조건 동일하여 S06가 흡수; 신호: multidef매수대기)
+  - name: "S06_MultiDefRelaxedBuy_Option2"
+    def_count_min: 2
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMultiDefRelaxedDamCondition
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "multidef매수대기"
+
+  # Strategy 10 — 표준 MultiDef, 관통 없음
+  - name: "S10_MultiDefStandardBuy_Option3"
+    def_count_min: 2
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMa60StrongerThanMa120By2Percent
+      - IsBoxDensityValidByDistribution
+      - MultiDefDamCountMax2
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "MD즉시매수"
