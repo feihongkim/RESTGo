@@ -138,6 +138,7 @@ func HandleGrid(args []string) {
 		done    int32
 	)
 
+
 	total := int32(len(items))
 	startTime := time.Now()
 
@@ -205,7 +206,8 @@ func runGridItem(basePath string, combo map[string]interface{}, market string, c
 	res.TotalTrades = 0
 	var grossWin, grossLoss float64
 	var cumReturn float64
-	var peak, maxDD float64
+	// 복리 자본곡선 기반 MDD: (peak - equity) / peak — 0~100% 범위 보장
+	equity, equityPeak, maxDD := 1.0, 1.0, 0.0
 
 	for _, pos := range positions {
 		if pos.IsActive || len(pos.SellExecutions) == 0 {
@@ -223,17 +225,22 @@ func runGridItem(basePath string, combo map[string]interface{}, market string, c
 		} else {
 			grossLoss += -ret
 		}
-		if cumReturn > peak {
-			peak = cumReturn
-		}
-		dd := peak - cumReturn
-		if dd > maxDD {
-			maxDD = dd
+		equity *= (1.0 + ret/100.0)
+		if equity <= 0 {
+			equity = 0
+			maxDD = 1.0
+		} else {
+			if equity > equityPeak {
+				equityPeak = equity
+			}
+			if dd := (equityPeak - equity) / equityPeak; dd > maxDD {
+				maxDD = dd
+			}
 		}
 	}
 
 	res.TotalReturn = cumReturn
-	res.MaxDrawdown = maxDD
+	res.MaxDrawdown = maxDD * 100
 	if res.TotalTrades > 0 {
 		res.AvgReturn = cumReturn / float64(res.TotalTrades)
 		res.WinRate = float64(res.WinTrades) / float64(res.TotalTrades) * 100

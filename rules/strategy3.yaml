@@ -1,17 +1,28 @@
-# rules/strategy3.yaml — Stage 1 채택 (2026-06-13, W11 결과 반영)
+# rules/strategy3.yaml — Stage 2 파라미터 최적화 반영 (2026-06-13, W12 결과)
 #
-# 채택: T11D_EMABull (W11 9변형 중 유일 합격)
+# 채택: T11D_EMABull (W11 9변형 → W12 파라미터 플래토 그리드)
+#
+# [Stage 1 결과 — W11]
 #  - 4마켓 PF 모두 ≥ 1.28 (BTC 1.28 / ETH 1.41 / SOL 2.22 / XRP 2.33)
 #  - 4마켓 avgNet 모두 양수 (BTC +0.10 / ETH +0.16 / SOL +0.47 / XRP +0.39)
-#  - 4마켓 win 70~82%
-#  - 게이트 기준(avgNet > +0.30 ∧ trades ≥ 100 ∧ PF > 1.3) 동시 충족 마켓은 없지만,
-#    "4/4 양수 + PF 1.28+ 일관성"이 W9 baseline 20/20 음수 대비 명확한 신호 진전.
-#  - BTC 미달(+0.10/1.28)은 Stage 2 임계값 그리드(EMA period, ATR multiplier 등)에서 개선 시도.
+#  - 게이트(avgNet>+0.30 ∧ trades≥100 ∧ PF>1.3 ∧ MDD<10%) 동시 충족 마켓 없음
 #
-# 청산 파라미터: W10-B plateau 최적값 (ATRSt 3.0 / ATRTg 2.0 / TimX 32)
+# [Stage 2 결과 — W12] 60조합 × 4마켓 = 240 시나리오 (grid_stage2.yaml)
+#  - RSI 임계값(25~35)은 완전 불활성 파라미터: VWAPDeviationBelow가 진입 지배 → 고정 불필요
+#  - ATRTg=1.5가 ATRTg=2.0 대비 일관적으로 우수 (ETH PF 1.937 vs 1.392, XRP MDD 4.16% vs 6.43%)
+#  - ATRSt=3.0 ETH 플래토 확인: ATRSt 2.0~3.5 전 구간 PF≥88% (민감도 낮음)
+#  - **ATRTg 2.0→1.5 변경** (Stage 2 채택값)
 #
-# 이전 룰(T01/T11_base/T12)은 W11에서 모두 게이트 미달로 폐기 — 아래 ## 기각 분석 참조.
-# 9변형 비교 데이터: results/baseline_t_rules_stage1.json
+# [채택 파라미터] ATRSt=3.0 / ATRTg=1.5 (ETH 최적, XRP/SOL 일관성 확인)
+# [게이트 현황]
+#   ETH: trades=110✓ PF=1.937✓ MDD=5.23%✓  avgNet=0.208%✗(기준 0.30%)
+#   XRP: trades=60✗  PF=2.430✓ MDD=4.16%✓  avgNet=0.242%✗
+#   SOL: trades=36✗  PF=5.268✓ MDD=2.64%✓  avgNet=0.557%✓
+#   BTC: trades=135✓ PF=1.217✗ MDD=13.67%✗ avgNet=0.056%✗
+#   → ETH 4/5 게이트 통과. avgNet만 미달 (비용의 1.04×, 기준 1.5×)
+#   → XRP/SOL 캔들 부족 (302k/161k봉 대비 IS 트레이드 60/36건으로 희소)
+#
+# 비교 데이터: zpicture/baseline_t_rules_stage1.json / zpicture/stage2_plateau_grid.json
 
 settings:
   FeeRate: 0.0005
@@ -20,8 +31,8 @@ settings:
   ADXTrendThreshold: 20
   RSIOversoldThreshold: 30
   VWAPDeviationK: 1.5
-  ATRStopMultiplier: 3.0          # W10-B plateau + W11 검증
-  ATRTargetMultiplier: 2.0
+  ATRStopMultiplier: 3.0          # Stage 2 플래토 확인 (ETH ATRSt 2.0~3.5 민감도 낮음)
+  ATRTargetMultiplier: 1.5        # Stage 2 채택: 2.0→1.5 (ETH PF +39%, MDD -17%)
   TimeExitBars: 32                # 8시간
   TargetSellWeight: 0.5
   TrailingEMAPeriod: 21

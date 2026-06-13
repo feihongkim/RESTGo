@@ -1,0 +1,22 @@
+# rules/strategy3_t11d_only.yaml — Stage 2 그리드 전용 T11D_EMABull 단일 전략
+# Settings는 grid_stage2.yaml의 params로 오버라이드됨
+settings:
+  FeeRate: 0.0005
+  SlippageRate: 0.0005
+  PerCandleCooldownBars: 4
+  ADXTrendThreshold: 20
+  RSIOversoldThreshold: 30
+  VWAPDeviationK: 1.5
+  ATRStopMultiplier: 3.0
+  ATRTargetMultiplier: 2.0
+  TimeExitBars: 32
+  TargetSellWeight: 0.5
+  TrailingEMAPeriod: 21
+
+strategies:
+  - name: T11D_EMABull
+    evaluation: per_candle
+    when: [IsDonchianBreakdown, IsEMABullArrangement]
+    any_of: [IsRSIOversold, IsVWAPDeviationBelow]
+    when_not: [IsRSIRecoveringFromOversold, IsDonchianBreakout]
+    signal: T11D_EMABull

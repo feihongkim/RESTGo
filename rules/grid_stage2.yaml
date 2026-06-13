@@ -1,0 +1,15 @@
+# rules/grid_stage2.yaml — Stage 2 파라미터 plateau 그리드 (T11D_EMABull)
+# 5 × 3 × 3 × 3 = 135 조합 × 4 마켓 = 540 시나리오
+# 목적: RSIOversoldThreshold / ATRStop / ATRTarget / VWAPDeviationK plateau 확인
+base_strategy: rules/strategy3_t11d_only.yaml
+markets:
+  - KRW-BTC
+  - KRW-ETH
+  - KRW-XRP
+  - KRW-SOL
+days: 400000
+workers: 8
+params:
+  RSIOversoldThreshold: [25, 28, 30, 32, 35]
+  ATRStopMultiplier: [2.0, 2.5, 3.0, 3.5]
+  ATRTargetMultiplier: [1.5, 2.0, 2.5]
