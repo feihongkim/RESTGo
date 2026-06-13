@@ -1,0 +1,94 @@
+# rules/strategy3.yaml — Stage D 빈도 확대 실험 (2026-06-13)
+#
+# 변경: T11D_EMABull (EMA9>EMA21>EMA50) → T11D_EMA9o21 (EMA9>EMA21만)
+# 사유: Stage 3 walk-forward 폐기 (avgNet 성과비 0.354 < 0.5)
+#       근본 원인 신호 빈도 부족 (연 ~13 거래) → EMA50 필터 완화로 빈도 확대 시도
+# 백업: rules/strategy3.yaml.t11d (이전 EMABull 버전 보존)
+#
+# Stage D 통과 조건 (jarvis): 빈도 ≥ 연 100/마켓 ∧ 4 게이트 ≥2 마켓 동시 충족 ∧ OOS/IS ≥ 0.5
+#
+# [Stage 1 결과 — W11]
+#  - 4마켓 PF 모두 ≥ 1.28 (BTC 1.28 / ETH 1.41 / SOL 2.22 / XRP 2.33)
+#  - 4마켓 avgNet 모두 양수 (BTC +0.10 / ETH +0.16 / SOL +0.47 / XRP +0.39)
+#  - 게이트(avgNet>+0.30 ∧ trades≥100 ∧ PF>1.3 ∧ MDD<10%) 동시 충족 마켓 없음
+#
+# [Stage 2 결과 — W12] 60조합 × 4마켓 = 240 시나리오 (grid_stage2.yaml)
+#  - RSI 임계값(25~35)은 완전 불활성 파라미터: VWAPDeviationBelow가 진입 지배 → 고정 불필요
+#  - ATRTg=1.5가 ATRTg=2.0 대비 일관적으로 우수 (ETH PF 1.937 vs 1.392, XRP MDD 4.16% vs 6.43%)
+#  - ATRSt=3.0 ETH 플래토 확인: ATRSt 2.0~3.5 전 구간 PF≥88% (민감도 낮음)
+#  - **ATRTg 2.0→1.5 변경** (Stage 2 채택값)
+#
+# [채택 파라미터] ATRSt=3.0 / ATRTg=1.5 (ETH 최적, XRP/SOL 일관성 확인)
+# [게이트 현황]
+#   ETH: trades=110✓ PF=1.937✓ MDD=5.23%✓  avgNet=0.208%✗(기준 0.30%)
+#   XRP: trades=60✗  PF=2.430✓ MDD=4.16%✓  avgNet=0.242%✗
+#   SOL: trades=36✗  PF=5.268✓ MDD=2.64%✓  avgNet=0.557%✓
+#   BTC: trades=135✓ PF=1.217✗ MDD=13.67%✗ avgNet=0.056%✗
+#   → ETH 4/5 게이트 통과. avgNet만 미달 (비용의 1.04×, 기준 1.5×)
+#   → XRP/SOL 캔들 부족 (302k/161k봉 대비 IS 트레이드 60/36건으로 희소)
+#
+# 비교 데이터: zpicture/baseline_t_rules_stage1.json / zpicture/stage2_plateau_grid.json
+
+settings:
+  FeeRate: 0.0005
+  SlippageRate: 0.0005
+  PerCandleCooldownBars: 4
+  ADXTrendThreshold: 20
+  RSIOversoldThreshold: 30
+  VWAPDeviationK: 1.5
+  ATRStopMultiplier: 3.0          # Stage 2 플래토 확인 (ETH ATRSt 2.0~3.5 민감도 낮음)
+  ATRTargetMultiplier: 1.5        # Stage 2 채택: 2.0→1.5 (ETH PF +39%, MDD -17%)
+  TimeExitBars: 32                # 8시간
+  TargetSellWeight: 0.5
+  TrailingEMAPeriod: 21
+
+strategies:
+  # T11D_EMA9o21 — Donchian 회귀 + EMA 단기 상승 (Stage D 완화안)
+  - name: T11D_EMA9o21
+    evaluation: per_candle
+    when:
+      - IsDonchianBreakdown       # 단기 신저가 돌파 후 평균회귀
+      - IsEMA9Above21             # EMA9 > EMA21 — 단기 상승만 (EMA50 필터 제거)
+    any_of:
+      - IsRSIOversold             # 동시 과매도 (확증 1)
+      - IsVWAPDeviationBelow      # VWAP 하방 괴리 (확증 2)
+    when_not:
+      - IsRSIRecoveringFromOversold
+      - IsDonchianBreakout
+    signal: T11D_EMA9o21
+
+# === Stage 1 기각 분석 (W11 결과 기준) ===
+#
+# T11A_Base / T11F_NoBBRebound (동일):
+#   - 트리거가 IsDonchianBreakdown 단독, EMA/MA 필터 없음 → 트레이드 4000+ /4마켓
+#   - 4마켓 모두 avgNet 음수 (-0.04 ~ -0.09), PF 0.83~0.95
+#   - 거부 필터 IsBBReboundFromLower는 IsDonchianBreakdown과 의미상 배타 (확인 — T11A=T11F)
+#
+# T11B_StrictRSI:
+#   - 트리거 [IsDonchianBreakdown + IsRSIOversold], any_of 없음 → 1300~2400 트레이드
+#   - 4마켓 양수지만 avgNet 0.02~0.08 / PF 1.03~1.11 (게이트 미달)
+#   - EMA 필터 없이도 양수지만, 거래당 엣지가 비용 회수 수준
+#
+# T11C_StrictRSI_NoTrend / T11G_AllFilters (동일):
+#   - ADX 추세 거부 + BB rebound 거부 추가 → 189~429 트레이드
+#   - SOL만 +0.018, 나머지 3마켓 -0.03 ~ -0.04 (게이트 미달)
+#   - ADX 거부 필터가 양호 신호도 같이 거부 (ADX > 20인 트렌딩 구간 제외)
+#
+# T11E_MAProper:
+#   - EMA 대신 MA(SMA) 정배열 필터 → ETH/XRP는 우수 (PF 2.58~4.58)
+#   - SOL/BTC는 미달 (-0.148/-0.009, PF 0.83/0.98)
+#   - 4마켓 일관성 부족 + ETH/XRP 트레이드 < 100 → 게이트 미충족
+#
+# T12_RSIOnly / T01v2_VWAPReversion (동일):
+#   - RSI Oversold 단독 트리거, VWAP 또는 MA 확증
+#   - SOL만 +0.024, 나머지 3마켓 -0.06 ~ -0.16 음수 (게이트 미달)
+#   - RSI Oversold가 두 룰의 결정 인자 (확인 — T12=T01v2 정확 일치)
+#
+# 핵심 발견:
+#   1. EMA 정배열 필터(IsEMABullArrangement)가 T11A→T11D 전환의 핵심 — 4마켓 음수→양수 일관 전환
+#   2. T11A=T11F, T11C=T11G, T12=T01v2 정확 일치 → 거부 필터의 의미적 중복·트리거 도미넌스 확인
+#   3. MDD 100%는 단일룰 전 자본 운용 가정의 산식 한계 (Stage 5 포지션 사이징에서 해소)
+#
+# === 이전 단계 폐기 (참고) ===
+# W9 (Stage 0 8.5년치): T03_EMAPullback / T04a_SqueezeBreakout / T04b_NRDonchianBreakout / T05_SuperTrendFollow (20/20 음수)
+# W11 (Stage 1): T01_VWAPReversion / T11_DonchianRebound(=T11A) / T12_RSIOversoldBounce(=T12) — 위 분석 참조
