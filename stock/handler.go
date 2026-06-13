@@ -50,6 +50,8 @@ func Handle(args []string) {
 		handleEdgeTest(args[1:])
 	case "baseline":
 		handleBaselineBacktest(args[1:])
+	case "walkforward":
+		handleWalkForward(args[1:])
 	default:
 		fmt.Printf("알 수 없는 stock 명령: %s\n", args[0])
 		fmt.Println("사용법:")
@@ -58,6 +60,7 @@ func Handle(args []string) {
 		fmt.Println("  ./RESTGo stock gridtest <grid_yaml> [output_json]")
 		fmt.Println("  ./RESTGo stock edgetest [markets_csv] [output_json]")
 		fmt.Println("  ./RESTGo stock baseline [markets_csv] [output_json] [strategy_yaml]")
+		fmt.Println("  ./RESTGo stock walkforward <market> [output_json] [strategy_yaml]")
 	}
 }
 
