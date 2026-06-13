@@ -1,0 +1,77 @@
+# strategy3.yaml — Upbit 15분봉 기반 지표 전략 (per_candle 평가)
+# 대상: Upbit 현물 long-only
+# 평가: evaluation: per_candle (DefBox 돌파 게이트 무관)
+# 실행: RESTGO_BUY_RULES=rules/strategy3.yaml ./RESTGo stock analyze KRW-BTC 1000
+
+settings:
+  FeeRate: 0.0005
+  SlippageRate: 0.0005
+  PerCandleCooldownBars: 4
+  ADXTrendThreshold: 20
+  VWAPDeviationK: 1.5
+  VolumeZScoreThreshold: 2.0
+  VolumeZScoreWindow: 20
+  MACDHistRisingBars: 3
+  StochOversoldThreshold: 25
+  RSIOversoldThreshold: 30
+  RSIOverboughtThreshold: 70
+
+strategies:
+  # T03: MACD 골든크로스 + VWAP 위 + 추세 확증
+  - name: T03_MACDCross
+    evaluation: per_candle
+    when:
+      - IsMACDGoldenCross
+      - IsAboveVWAP
+      - IsADXTrending
+    when_not:
+      - IsRSIFallingFromOverbought
+      - IsMaInverseArrangement
+    signal: MACD골든크로스매수
+
+  # T04: Donchian 돌파 + 거래량 스파이크
+  - name: T04_DonchianBreakout
+    evaluation: per_candle
+    when:
+      - IsDonchianBreakout
+      - IsVolumeZScoreSpike
+      - IsDIBullish
+    when_not:
+      - IsPriceBelowAllMa
+    signal: Donchian돌파매수
+
+  # T05: SuperTrend 상승전환 + ADX 추세
+  - name: T05_SuperTrend
+    evaluation: per_candle
+    when:
+      - IsSuperTrendBullish
+      - IsADXTrending
+      - IsAboveVWAP
+    when_not:
+      - IsMaInverseArrangement
+    signal: SuperTrend추종매수
+
+  # T01: VWAP 하단 이탈 후 재돌파 (회귀)
+  - name: T01_VWAPReclaim
+    evaluation: per_candle
+    when:
+      - IsVWAPReclaim
+      - IsOBVRising
+    any_of:
+      - IsRSIRecoveringFromOversold
+      - IsStochGoldenCross
+    when_not:
+      - IsADXTrending
+      - IsMaInverseArrangement
+    signal: VWAP회귀매수
+
+  # T04b: MACD 히스토그램 상승 + Keltner 돌파 (스퀴즈 돌파)
+  - name: T04b_KeltnerBreakout
+    evaluation: per_candle
+    when:
+      - IsKeltnerBreakout
+      - IsMACDHistogramRising
+    when_not:
+      - IsRSIOverbought
+      - IsSuperTrendBearish
+    signal: Keltner돌파매수

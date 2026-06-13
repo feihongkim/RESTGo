@@ -38,6 +38,31 @@ type Settings struct {
 
 	// MA 수렴 조건
 	MaConvergenceThreshold float64 // MA5/20/60 수렴 임계값 (기본 0.03 = 3%)
+
+	// 백테스트 비용 모델
+	FeeRate      float64 // 수수료율 (Upbit 기본 0.0005 = 0.05%)
+	SlippageRate float64 // 슬리피지율 (기본 0.0005)
+
+	// 매 캔들 평가 (per_candle 룰)
+	PerCandleCooldownBars int // 발화 후 재발화 금지 봉 수 (기본 4)
+
+	// ADX/MACD/Stoch 임계값
+	ADXTrendThreshold        float64 // ADX 추세 판단 임계 (기본 20)
+	MACDHistRisingBars       int     // MACD 히스토그램 상승 확인 봉 수 (기본 3)
+	StochOversoldThreshold   float64 // Stochastic 과매도 (기본 25)
+	StochOverboughtThreshold float64 // Stochastic 과매수 (기본 75)
+
+	// VWAP/거래량 임계값
+	VWAPDeviationK        float64 // VWAP σ 배수 (기본 1.5)
+	VolumeZScoreThreshold float64 // 거래량 Z-score 임계 (기본 2.0)
+	VolumeZScoreWindow    int     // Z-score 계산 창 (기본 20)
+	OBVRisingPeriod       int     // OBV 상승 확인 봉 수 (기본 5)
+
+	// 변동성 임계값
+	SuperTrendPeriod     int     // SuperTrend ATR 기간 (기본 10)
+	SuperTrendMultiplier float64 // SuperTrend 승수 (기본 3.0)
+	DonchianPeriod       int     // Donchian 기간 (기본 20)
+	NarrowRangePeriod    int     // NR 판단 봉 수 (기본 7)
 }
 
 // DefaultSettings 는 기본값으로 초기화된 Settings 반환
@@ -67,5 +92,25 @@ func DefaultSettings() Settings {
 		BBMiddleHoldDuration:    3,
 
 		MaConvergenceThreshold: 0.03,
+
+		FeeRate:      0.0005,
+		SlippageRate: 0.0005,
+
+		PerCandleCooldownBars: 4,
+
+		ADXTrendThreshold:        20,
+		MACDHistRisingBars:       3,
+		StochOversoldThreshold:   25,
+		StochOverboughtThreshold: 75,
+
+		VWAPDeviationK:        1.5,
+		VolumeZScoreThreshold: 2.0,
+		VolumeZScoreWindow:    20,
+		OBVRisingPeriod:       5,
+
+		SuperTrendPeriod:     10,
+		SuperTrendMultiplier: 3.0,
+		DonchianPeriod:       20,
+		NarrowRangePeriod:    7,
 	}
 }

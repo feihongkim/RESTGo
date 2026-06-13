@@ -156,4 +156,81 @@ func init() {
 	RegisterCondition("IsPriceAboveAllMa", func(ctx *box.TradingContext, s Settings) bool {
 		return cond.IsPriceAboveAllMa(ctx)
 	})
+
+	// ── 15분봉 P0: 모멘텀·추세 강도 ─────────────────────────────
+	RegisterCondition("IsMACDGoldenCross", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsMACDGoldenCross(ctx)
+	})
+	RegisterCondition("IsMACDHistogramRising", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsMACDHistogramRising(ctx, s.MACDHistRisingBars)
+	})
+	RegisterCondition("IsStochGoldenCross", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsStochGoldenCross(ctx, s.StochOversoldThreshold)
+	})
+	RegisterCondition("IsADXTrending", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsADXTrending(ctx, s.ADXTrendThreshold)
+	})
+	RegisterCondition("IsDIBullish", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsDIBullish(ctx)
+	})
+	RegisterCondition("IsDIBearish", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsDIBearish(ctx)
+	})
+
+	// ── 15분봉 P0: VWAP·거래량 ───────────────────────────────────
+	RegisterCondition("IsAboveVWAP", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsAboveVWAP(ctx)
+	})
+	RegisterCondition("IsBelowVWAP", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsBelowVWAP(ctx)
+	})
+	RegisterCondition("IsVWAPDeviation", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsVWAPDeviation(ctx, s.VWAPDeviationK)
+	})
+	RegisterCondition("IsVWAPReclaim", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsVWAPReclaim(ctx, 8)
+	})
+	RegisterCondition("IsVolumeZScoreSpike", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsVolumeZScoreSpike(ctx, s.VolumeZScoreWindow, s.VolumeZScoreThreshold)
+	})
+	RegisterCondition("IsOBVRising", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsOBVRising(ctx, s.OBVRisingPeriod)
+	})
+
+	// ── 15분봉 P0: 변동성 구조 ──────────────────────────────────
+	RegisterCondition("IsSuperTrendBullish", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsSuperTrendBullish(ctx)
+	})
+	RegisterCondition("IsSuperTrendBearish", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsSuperTrendBearish(ctx)
+	})
+	RegisterCondition("IsDonchianBreakout", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsDonchianBreakout(ctx)
+	})
+	RegisterCondition("IsDonchianBreakdown", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsDonchianBreakdown(ctx)
+	})
+	RegisterCondition("IsKeltnerBreakout", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsKeltnerBreakout(ctx)
+	})
+	RegisterCondition("IsNarrowRange", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsNarrowRange(ctx, s.NarrowRangePeriod)
+	})
+
+	// ── 15분봉 P0: 숏 미러 (when_not 거부 필터용) ────────────────
+	RegisterCondition("IsRSIFallingFromOverbought", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsRSIFallingFromOverbought(ctx, s.RSIOverboughtThreshold)
+	})
+	RegisterCondition("IsBBUpperReject", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsBBUpperReject(ctx)
+	})
+	RegisterCondition("IsMaDeadCross5x20", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsMaDeadCross5x20(ctx)
+	})
+	RegisterCondition("IsMaInverseArrangement", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsMaInverseArrangement(ctx)
+	})
+	RegisterCondition("IsPriceBelowAllMa", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsPriceBelowAllMa(ctx)
+	})
 }

@@ -85,6 +85,8 @@ type SellExecution struct {
 	PartialReturnRate  float64 `json:"partialReturnRate"`
 	HoldingDays        int     `json:"holdingDays"`
 	ExecutionTime      string  `json:"executionTime"`
+	SellCost           float64 `json:"sellCost"`          // 청산 비용 (SellPrice * (FeeRate + SlippageRate))
+	NetPartialReturn   float64 `json:"netPartialReturn"`  // 비용 차감 후 부분 수익률
 }
 
 // Category 는 SellReason으로부터 카테고리 자동 추론 (C# SellExecution.Category 포팅)
@@ -152,6 +154,12 @@ type TradePosition struct {
 	SellDate        string
 	SellReason      string
 	ReturnRate      float64
+
+	// === 비용 모델 (수수료 + 슬리피지) ===
+	FeeRate       float64 // 수수료율 (예: 0.0005)
+	SlippageRate  float64 // 슬리피지율 (예: 0.0005)
+	BuyCost       float64 // 매수 왕복 비용 (BuyPriceOrigin * (FeeRate + SlippageRate))
+	NetReturnRate float64 // 비용 차감 후 수익률
 
 	// === 활성 상태 ===
 	IsActive bool

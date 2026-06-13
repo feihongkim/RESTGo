@@ -16,6 +16,7 @@ var EnvHan = &DbHanEnv{}
 var EnvVar = &DbVarEnv{}
 var EnvKIS = &DbKISEnv{}
 var EnvMong = &DbMongEnv{}
+var EnvTUF = &DbTUFEnv{}
 
 // EnvType 은 config.yaml의 설정값을 담는 구조체
 type EnvType struct {
@@ -57,6 +58,11 @@ type DbVarEnv struct {
 type DbKISEnv struct {
 	MSSQL_ADDR  string
 	MSSQL_DBKIS string
+}
+
+type DbTUFEnv struct {
+	MSSQL_ADDR  string
+	MSSQL_DBTUF string
 }
 
 type DbMongEnv struct {

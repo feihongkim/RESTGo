@@ -47,6 +47,9 @@ func (m *msConn) initDB(dbname string) error {
 	case "KIS2":
 		connStr = fmt.Sprintf("server=%s;user id=%s;password=%s;database=%s;encrypt=disable;trustServerCertificate=true;connection timeout=3",
 			EnvKIS.MSSQL_ADDR, Env.MSSQL_USER, Env.MSSQL_PASSWORD, EnvKIS.MSSQL_DBKIS)
+	case "tuf":
+		connStr = fmt.Sprintf("server=%s;user id=%s;password=%s;database=%s;encrypt=disable;trustServerCertificate=true;connection timeout=10",
+			EnvTUF.MSSQL_ADDR, Env.MSSQL_USER, Env.MSSQL_PASSWORD, EnvTUF.MSSQL_DBTUF)
 	default:
 		return fmt.Errorf("알 수 없는 DB 이름: %s", dbname)
 	}

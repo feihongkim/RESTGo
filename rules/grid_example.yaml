@@ -1,0 +1,25 @@
+# grid_example.yaml — 그리드 테스트 예시
+# 사용: ./RESTGo stock gridtest rules/grid_example.yaml zpicture/grid_results.json
+#
+# Stage 1: 조합 스크리닝 예시 (T03 전략 파라미터 스윕)
+
+base_strategy: rules/strategy3.yaml
+markets:
+  - KRW-BTC
+  - KRW-ETH
+days: 1000
+workers: 8
+
+params:
+  ADXTrendThreshold:
+    - 15
+    - 20
+    - 25
+  VolumeZScoreThreshold:
+    - 1.5
+    - 2.0
+    - 2.5
+  PerCandleCooldownBars:
+    - 4
+    - 8
+    - 16

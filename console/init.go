@@ -53,6 +53,10 @@ func init() {
 			EnvMong.Mongo_ADDR = config.VALUE_DATA
 		case "PORT_MONG":
 			EnvMong.Mongo_PORT = config.VALUE_DATA
+		case "ADDR_TUF":
+			EnvTUF.MSSQL_ADDR = config.VALUE_DATA
+		case "DBNAME_TUF":
+			EnvTUF.MSSQL_DBTUF = config.VALUE_DATA
 		}
 	}
 
@@ -64,6 +68,14 @@ func init() {
 		EnvKIS.MSSQL_DBKIS = "KIS2"
 	}
 
+	// TUF DB 기본값 (KeyValueStore에 미등록 시)
+	if EnvTUF.MSSQL_ADDR == "" {
+		EnvTUF.MSSQL_ADDR = "tuf.tail5b4272.ts.net"
+	}
+	if EnvTUF.MSSQL_DBTUF == "" {
+		EnvTUF.MSSQL_DBTUF = "Upbit"
+	}
+
 	// 나머지 DB 연결
 	if err := MsConn.EnsureConnection("han"); err != nil {
 		log.Fatalf("han DB 연결 실패: %v", err)
@@ -73,6 +85,11 @@ func init() {
 	}
 	if err := MsConn.EnsureConnection("KIS2"); err != nil {
 		log.Fatalf("KIS2 DB 연결 실패: %v", err)
+	}
+	// TUF DB 연결 (비필수: 15분봉 암호화폐 분석 기능에만 사용)
+	if err := MsConn.EnsureConnection("tuf"); err != nil {
+		log.Printf("tuf DB 연결 실패 (비필수): %v", err)
+		// non-fatal: 15분봉 분석 기능만 비활성
 	}
 	fmt.Printf("%s [Init] MSSQL 연결 초기화 완료\n", GenerateTimestampedString())
 

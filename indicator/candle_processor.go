@@ -141,4 +141,31 @@ func PrepareCandles(candles []*box.Candle) {
 			}
 		}
 	}
+
+	// 8. EMA 9/21/50 (원본가 기준)
+	CalculateEMA(candles)
+
+	// 9. MACD (12, 26, 9 — 스케일 종가)
+	CalculateMACD(candles, 12, 26, 9)
+
+	// 10. Stochastic (14, 3, 3 — 스케일 OHLC)
+	CalculateStochastic(candles, 14, 3, 3)
+
+	// 11. ADX/DMI (14 — 스케일 OHLC)
+	CalculateADX(candles, 14)
+
+	// 12. VWAP (원본가, 날짜 리셋)
+	CalculateVWAP(candles)
+
+	// 13. SuperTrend (10, 3.0 — 원본가 + ATR)
+	CalculateSuperTrend(candles, 10, 3.0)
+
+	// 14. Donchian Channel (20 — 원본가)
+	CalculateDonchian(candles, 20)
+
+	// 15. Keltner Channel (20, 1.5 — 원본가 + ATR)
+	CalculateKeltner(candles, 20, 1.5)
+
+	// 16. OBV (스케일 종가 방향)
+	CalculateOBV(candles)
 }

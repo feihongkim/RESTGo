@@ -34,6 +34,7 @@ func Handle(args []string) {
 		fmt.Println("사용법:")
 		fmt.Println("  ./RESTGo stock analyze <종목코드> [일수=250]")
 		fmt.Println("  ./RESTGo stock batch [일수=250]")
+		fmt.Println("  ./RESTGo stock gridtest <grid_yaml> [output_json]")
 		return
 	}
 
@@ -42,11 +43,14 @@ func Handle(args []string) {
 		handleAnalyze(args[1:])
 	case "batch":
 		handleBatch(args[1:])
+	case "gridtest":
+		handleGridTest(args[1:])
 	default:
 		fmt.Printf("알 수 없는 stock 명령: %s\n", args[0])
 		fmt.Println("사용법:")
 		fmt.Println("  ./RESTGo stock analyze <종목코드> [일수=250]")
 		fmt.Println("  ./RESTGo stock batch [일수=250]")
+		fmt.Println("  ./RESTGo stock gridtest <grid_yaml> [output_json]")
 	}
 }
 
@@ -92,12 +96,11 @@ func handleAnalyze(args []string) {
 	indicator.PrepareCandles(candles)
 
 	fmt.Printf("[%s] Box/매수/매도 분석 중...\n", console.GenerateTimestampedString())
-	settings := stg.DefaultSettings()
 	_ = stg.LoadStrategy(buyRulesPath())
 	if err := stg.LoadSellStrategyFile(sellStrategyPath); err != nil {
 		fmt.Printf("[warn] 매도 룰 로드 실패 — 매도 평가 비활성: %v\n", err)
 	}
-	result := stg.Analyze(candles, settings)
+	result := stg.Analyze(candles, stg.GetActiveSettings())
 
 	nBox, nMain, nDef := 0, 0, 0
 	for _, b := range result.BoxList {
@@ -238,7 +241,7 @@ func handleBatch(args []string) {
 	var wg sync.WaitGroup
 	var processed int32
 
-	settings := stg.DefaultSettings()
+	batchSettings := stg.GetActiveSettings()
 
 	for _, s := range stocks {
 		wg.Add(1)
@@ -253,7 +256,7 @@ func handleBatch(args []string) {
 				return
 			}
 			indicator.PrepareCandles(candles)
-			result := stg.Analyze(candles, settings)
+			result := stg.Analyze(candles, batchSettings)
 
 			n := atomic.AddInt32(&processed, 1)
 			if n%100 == 0 {

@@ -88,4 +88,42 @@ type Candle struct {
 	BBPercent      float64 `json:"-"` // %B = (Close - Lower) / (Upper - Lower), 0~1+ 범위
 
 	StickCount int `json:"stickCount"`
+
+	// EMA (원본가 기준, period 9/21/50)
+	EMA9  float64 `json:"-"`
+	EMA21 float64 `json:"-"`
+	EMA50 float64 `json:"-"`
+
+	// MACD (스케일 종가 기준)
+	MACD       float64 `json:"-"`
+	MACDSignal float64 `json:"-"`
+	MACDHist   float64 `json:"-"`
+
+	// Stochastic (%K, %D)
+	StochK float64 `json:"-"`
+	StochD float64 `json:"-"`
+
+	// ADX/DMI
+	ADX     float64 `json:"-"`
+	PlusDI  float64 `json:"-"`
+	MinusDI float64 `json:"-"`
+
+	// VWAP (원본가 기준, 날짜 변경시 세션 리셋)
+	VWAP       float64 `json:"-"`
+	VWAPStdDev float64 `json:"-"`
+
+	// SuperTrend (원본가 기준)
+	SuperTrend    float64 `json:"-"`
+	SuperTrendDir int     `json:"-"` // 1=상승 -1=하락
+
+	// Donchian Channel (원본가, 20봉)
+	DonchianUpper float64 `json:"-"`
+	DonchianLower float64 `json:"-"`
+
+	// Keltner Channel (원본가, EMA20 ± ATR×1.5)
+	KeltnerUpper float64 `json:"-"`
+	KeltnerLower float64 `json:"-"`
+
+	// OBV (스케일 종가 방향 기준)
+	OBV float64 `json:"-"`
 }

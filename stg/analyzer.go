@@ -7,19 +7,29 @@ import (
 	"RESTGo/cond"
 )
 
-// activeRules 는 LoadRules()로 초기화되는 활성 전략 목록
+// activeRules 는 LoadRulesWithSettings()로 초기화되는 활성 전략 목록
 var activeRules []RuleConfig
+
+// activeSettings 는 LoadRulesWithSettings()로 초기화되는 활성 설정값
+// YAML의 settings 블록이 DefaultSettings()를 덮어쓴다.
+var activeSettings Settings = DefaultSettings()
 
 // activeSellSettings 는 LoadSellStrategy()로 초기화되는 매도 설정 (없으면 비활성)
 var activeSellSettings *SellSettings
 
-// LoadStrategy 는 YAML 파일에서 전략 룰을 로드
+// GetActiveSettings 는 LoadStrategy()로 로드된 현재 활성 Settings를 반환한다.
+func GetActiveSettings() Settings {
+	return activeSettings
+}
+
+// LoadStrategy 는 YAML 파일에서 전략 룰과 settings 오버라이드를 함께 로드
 func LoadStrategy(path string) error {
-	rules, err := LoadRules(path)
+	rules, settings, err := LoadRulesWithSettings(path)
 	if err != nil {
 		return fmt.Errorf("전략 로드 실패 (%s): %w", path, err)
 	}
 	activeRules = rules
+	activeSettings = settings
 	fmt.Printf("[stg] 전략 %d개 로드: %s\n", len(rules), path)
 	return nil
 }
@@ -33,6 +43,15 @@ func LoadSellStrategyFile(path string) error {
 	}
 	activeSellSettings = &settings
 	return nil
+}
+
+// AnalyzeWithRules 는 명시적 rules/settings로 분석한다 (그리드 러너용 — activeRules 무시).
+func AnalyzeWithRules(candles []*box.Candle, rules []RuleConfig, settings Settings) AnalysisResult {
+	prevRules := activeRules
+	activeRules = rules
+	result := Analyze(candles, settings)
+	activeRules = prevRules
+	return result
 }
 
 // Analyze 는 캔들 리스트에 대해 Box/DefBox 분석을 수행하고 매수 신호를 반환
@@ -70,7 +89,24 @@ func Analyze(candles []*box.Candle, settings Settings) AnalysisResult {
 		for _, signal := range evaluateBuySignals(ctx, settings) {
 			result.BuySignals = append(result.BuySignals, signal)
 			if activeSellSettings != nil {
-				ctx.AddActivePosition(buildTradePositionFromSignal(ctx, signal))
+				pos := buildTradePositionFromSignal(ctx, signal)
+				// 비용 모델 적용 (same-candle fill 기준)
+				pos.FeeRate = settings.FeeRate
+				pos.SlippageRate = settings.SlippageRate
+				pos.BuyCost = pos.BuyPriceOrigin * (settings.FeeRate + settings.SlippageRate)
+				ctx.AddActivePosition(pos)
+			}
+		}
+
+		// per-candle 룰 평가 (evaluation: per_candle 룰은 매 캔들에서 평가)
+		for _, signal := range evaluatePerCandleSignals(ctx, settings) {
+			result.BuySignals = append(result.BuySignals, signal)
+			if activeSellSettings != nil {
+				pos := buildTradePositionFromSignal(ctx, signal)
+				pos.FeeRate = settings.FeeRate
+				pos.SlippageRate = settings.SlippageRate
+				pos.BuyCost = pos.BuyPriceOrigin * (settings.FeeRate + settings.SlippageRate)
+				ctx.AddActivePosition(pos)
 			}
 		}
 
@@ -284,4 +320,56 @@ func findLastDefBoxIndex(boxList []*box.Box) int {
 		}
 	}
 	return -1
+}
+
+// evaluatePerCandleSignals 는 evaluation: per_candle 로 표시된 룰을 매 캔들에서 평가한다.
+// 쿨다운: 동일 룰은 PerCandleCooldownBars 봉 내 재발화 불가.
+// 포지션 중복: 같은 전략명의 활성 포지션이 있으면 스킵.
+func evaluatePerCandleSignals(ctx *box.TradingContext, s Settings) []BuySignal {
+	if len(activeRules) == 0 {
+		return nil
+	}
+	var signals []BuySignal
+	for _, rule := range activeRules {
+		if rule.Evaluation != "per_candle" {
+			continue
+		}
+		// 쿨다운 체크
+		if lastPos, fired := ctx.LastPerCandleSignalPosition[rule.Name]; fired {
+			if ctx.Position-lastPos < s.PerCandleCooldownBars {
+				continue
+			}
+		}
+		// 같은 전략명의 활성 포지션이 있으면 스킵
+		hasActivePos := false
+		for _, p := range ctx.ActivePositions {
+			if p.IsActive && p.StrategyName == rule.Name {
+				hasActivePos = true
+				break
+			}
+		}
+		if hasActivePos {
+			continue
+		}
+
+		sig, stratName := evaluateSingleRule(rule, ctx, s)
+		if sig != "" {
+			ctx.LastPerCandleSignalPosition[stratName] = ctx.Position
+			cur := ctx.GetCurrentCandle()
+			date := ""
+			if cur != nil {
+				date = cur.Date
+			}
+			// Reason = 전략명 (TradePosition.StrategyName으로 저장되어 활성 포지션 체크에 사용)
+			// Helper = 실제 신호값 + "per_candle" 마커
+			signals = append(signals, BuySignal{
+				Triggered: true,
+				Reason:    stratName,
+				Position:  ctx.Position,
+				Date:      date,
+				Helper:    "per_candle:" + sig,
+			})
+		}
+	}
+	return signals
 }
