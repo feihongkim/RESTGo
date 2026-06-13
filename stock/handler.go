@@ -20,6 +20,15 @@ const (
 	sellStrategyPath = "rules/sell_strategy1.yaml"
 )
 
+// buyRulesPath 는 매수 전략 YAML 경로를 반환한다.
+// RESTGO_BUY_RULES 환경변수로 대안 전략 파일(예: rules/strategy2.yaml)을 지정할 수 있다.
+func buyRulesPath() string {
+	if p := os.Getenv("RESTGO_BUY_RULES"); p != "" {
+		return p
+	}
+	return strategyPath
+}
+
 func Handle(args []string) {
 	if len(args) == 0 {
 		fmt.Println("사용법:")
@@ -84,7 +93,7 @@ func handleAnalyze(args []string) {
 
 	fmt.Printf("[%s] Box/매수/매도 분석 중...\n", console.GenerateTimestampedString())
 	settings := stg.DefaultSettings()
-	_ = stg.LoadStrategy(strategyPath)
+	_ = stg.LoadStrategy(buyRulesPath())
 	if err := stg.LoadSellStrategyFile(sellStrategyPath); err != nil {
 		fmt.Printf("[warn] 매도 룰 로드 실패 — 매도 평가 비활성: %v\n", err)
 	}
@@ -168,7 +177,7 @@ func handleBatch(args []string) {
 		days = n
 	}
 
-	_ = stg.LoadStrategy(strategyPath)
+	_ = stg.LoadStrategy(buyRulesPath())
 	if err := stg.LoadSellStrategyFile(sellStrategyPath); err != nil {
 		fmt.Printf("[warn] 매도 룰 로드 실패 — 매도 평가 비활성: %v\n", err)
 	}

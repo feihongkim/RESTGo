@@ -1,0 +1,74 @@
+# strategy2.yaml — 지표(RSI/Bollinger/MA) 기반 매수 전략
+#
+# strategy1.yaml(Box 구조 기반)의 대안 전략 세트.
+# 룰은 DefBox 돌파 캔들에서만 평가되므로(stg/analyzer.go 돌파 게이트),
+# 아래 전략들은 "박스 돌파 + 지표 확증" 조합으로 동작한다.
+#
+# 사용법: RESTGO_BUY_RULES=rules/strategy2.yaml ./RESTGo stock analyze <종목코드> 250
+# 평가 순서: 위에서부터 첫 매칭 승리 → 엄격한 전략을 위에 배치
+
+strategies:
+  # I01 — 추세 확증 (최엄격): 정배열 + 전 MA 상승 + 중심선 위 + 건전 RSI
+  - name: "I01_TrendConfluenceBuy"
+    when:
+      - IsPriceAboveAllMa
+      - IsMaProperArrangement
+      - IsAllMaRising
+      - IsAboveBBMiddle
+      - IsRSIInBullZone
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "추세확증매수"
+
+  # I02 — 스퀴즈 돌파: 변동성 수축 후 상방 이탈 (에너지 응축 → 분출)
+  - name: "I02_SqueezeBreakoutBuy"
+    when:
+      - IsBBSqueezeBreakout
+      - IsPriceAboveAllMa
+    when_not:
+      - IsRSIOverbought
+      - HasExcessiveUpperWick
+    signal: "스퀴즈돌파매수"
+
+  # I03 — MA 수렴 후 발산: MA5/20/60 수렴 + 가격 이탈 + RSI 상승
+  - name: "I03_ConvergenceBreakoutBuy"
+    when:
+      - IsMaConvergence
+      - IsPriceAboveAllMa
+      - IsRSIRising
+    when_not:
+      - IsRSIOverbought
+      - HasExcessiveUpperWick
+    signal: "수렴돌파매수"
+
+  # I04 — 골든크로스 확증: MA5×MA20 골든크로스 + RSI 상승 + 밴드 상단부
+  - name: "I04_GoldenCrossBuy"
+    when:
+      - IsMaGoldenCross5x20
+      - IsRSIRising
+    any_of:
+      - IsAboveBBMiddle
+      - IsBBUpperBreakout
+    when_not:
+      - IsRSIOverbought
+      - HasExcessiveUpperWick
+    signal: "골든크로스매수"
+
+  # I05 — 과매도 반등: RSI 과매도 탈출 + BB 하단 터치 후 회복
+  - name: "I05_OversoldReboundBuy"
+    when:
+      - IsRSIRecoveringFromOversold
+      - IsBBReboundFromLower
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "과매도반등매수"
+
+  # I06 — 밴드 상단 돌파 (최완화): 종가 상단 밴드 돌파 + 전 MA 상승
+  - name: "I06_BandBreakoutBuy"
+    when:
+      - IsBBUpperBreakout
+      - IsAllMaRising
+    when_not:
+      - IsRSIOverbought
+      - HasExcessiveUpperWick
+    signal: "밴드돌파매수"

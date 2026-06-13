@@ -262,6 +262,71 @@ func TestFindLastDefBoxIndex(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────
+// strategy2.yaml — 지표 기반 전략 세트 검증
+// ─────────────────────────────────────────────
+
+func TestStrategy2YAML_AllConditionsRegistered(t *testing.T) {
+	rules, err := LoadRules("../rules/strategy2.yaml")
+	if err != nil {
+		t.Fatalf("rules/strategy2.yaml 로드 실패: %v", err)
+	}
+	if len(rules) != 6 {
+		t.Fatalf("전략 개수 = %d, want 6 (I01~I06)", len(rules))
+	}
+
+	for _, rule := range rules {
+		if rule.Signal == "" {
+			t.Errorf("전략 %q: signal이 비어 있음", rule.Name)
+		}
+		for _, group := range [][]string{rule.When, rule.WhenNot, rule.AnyOf} {
+			for _, condName := range group {
+				if _, ok := ConditionRegistryGet(condName); !ok {
+					t.Errorf("전략 %q: 미등록 조건 %q", rule.Name, condName)
+				}
+			}
+		}
+	}
+}
+
+// TestStrategy2YAML_TrendConfluenceFires 는 추세 확증 상황(정배열·전 MA 상승·
+// 중심선 위·건전 RSI)에서 I01이 첫 매칭으로 발화하는지 실제 레지스트리로 검증
+func TestStrategy2YAML_TrendConfluenceFires(t *testing.T) {
+	rules, err := LoadRules("../rules/strategy2.yaml")
+	if err != nil {
+		t.Fatalf("rules/strategy2.yaml 로드 실패: %v", err)
+	}
+
+	candles := make([]*box.Candle, 20)
+	for i := range candles {
+		candles[i] = &box.Candle{
+			Open: 109, Close: 110, High: 111, Low: 108,
+			Ma5: 105, Ma20: 102, Ma60: 100,
+			Gradient: 1, Gradient20: 0.5, Gradient60: 0.2,
+			RSI:            60,
+			BollingerLower: 90, BollingerUpper: 120,
+			BBPercent: (110.0 - 90.0) / 30.0, // ≈ 0.67
+		}
+	}
+	ctx := box.NewTradingContext(candles, nil)
+	ctx.Position = 19
+
+	signal, name := EvaluateRules(rules, ctx, DefaultSettings())
+	if name != "I01_TrendConfluenceBuy" || signal != "추세확증매수" {
+		t.Errorf("got (%q, %q), want (추세확증매수, I01_TrendConfluenceBuy)", signal, name)
+	}
+
+	// RSI 과열(75)이면 I01의 IsRSIInBullZone 탈락 → I06(밴드돌파)도 상단 미돌파라 무신호
+	for _, c := range candles {
+		c.RSI = 75
+	}
+	ctx2 := box.NewTradingContext(candles, nil)
+	ctx2.Position = 19
+	if signal, name := EvaluateRules(rules, ctx2, DefaultSettings()); name != "" {
+		t.Errorf("RSI 과열 시 무신호여야 함: got (%q, %q)", signal, name)
+	}
+}
+
+// ─────────────────────────────────────────────
 // TODO: stg.Analyze 통합 테스트
 // 실제 종목 캔들 스냅샷(JSON)을 testdata/에 저장해두고
 // C# Stock1의 분석 결과(Box 목록·신호)와 일치하는지 골든 테스트로 검증할 것.

@@ -102,4 +102,58 @@ func init() {
 		c := ctx.GetCurrentCandle()
 		return c != nil && c.ATRPercentage <= s.ATREntryMaxThreshold
 	})
+
+	// ── RSI 조건 ──────────────────────────────────────────────
+	RegisterCondition("IsRSIOversold", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsRSIOversold(ctx, s.RSIOversoldThreshold)
+	})
+	RegisterCondition("IsRSIOverbought", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsRSIOverbought(ctx, s.RSIOverboughtThreshold)
+	})
+	RegisterCondition("IsRSIRecoveringFromOversold", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsRSIRecoveringFromOversold(ctx, s.RSIOversoldThreshold, s.RSIRecoveryLookback)
+	})
+	RegisterCondition("IsRSIRising", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsRSIRising(ctx, s.RSIRisingPeriod)
+	})
+	RegisterCondition("IsRSIInBullZone", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsRSIInBullZone(ctx, s.RSIBullZoneLow, s.RSIBullZoneHigh)
+	})
+
+	// ── Bollinger Band 조건 ──────────────────────────────────
+	RegisterCondition("IsBBLowerTouch", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsBBLowerTouch(ctx)
+	})
+	RegisterCondition("IsBBReboundFromLower", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsBBReboundFromLower(ctx, s.BBReboundLookback, s.BBReboundPercentB)
+	})
+	RegisterCondition("IsBBSqueezeBreakout", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsBBSqueezeBreakout(ctx, s.BBSqueezeLookback, s.BBSqueezeWidthThreshold, s.BBBreakoutPercentB)
+	})
+	RegisterCondition("IsBBUpperBreakout", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsBBUpperBreakout(ctx)
+	})
+	RegisterCondition("IsAboveBBMiddle", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsAboveBBMiddle(ctx, s.BBMiddleHoldDuration)
+	})
+
+	// ── 이동평균(MA) 조건 ─────────────────────────────────────
+	RegisterCondition("IsMaGoldenCross5x20", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsMaGoldenCross5x20(ctx)
+	})
+	RegisterCondition("IsMaGoldenCross20x60", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsMaGoldenCross20x60(ctx)
+	})
+	RegisterCondition("IsMaProperArrangement", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsMaProperArrangementNow(ctx)
+	})
+	RegisterCondition("IsAllMaRising", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsAllMaRising(ctx)
+	})
+	RegisterCondition("IsMaConvergence", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsMaConvergence(ctx, s.MaConvergenceThreshold)
+	})
+	RegisterCondition("IsPriceAboveAllMa", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsPriceAboveAllMa(ctx)
+	})
 }

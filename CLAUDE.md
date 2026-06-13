@@ -112,6 +112,7 @@ C# 참조 프로젝트: `ssh feihong@192.168.3.120:/home/feihong/code/REST/RESTG
 | `cond/buy_conditions_extra.go` | `biz/Evaluators/MovingAverageConditionEvaluator.cs`, `CandlePatternEvaluator.cs`, `PenetrationEvaluator.cs` 등 | MA·캔들패턴·관통·MultiDef 조건 |
 | `cond/buy_oscillator.go` | `biz/Evaluators/OscillatorEvaluator.cs` | 오실레이터·관통 옵션 + 공용 오실로 헬퍼 |
 | `cond/buy_followup.go` | `BuyDecisionProcessor.FollowUp.cs` 의존 조건 + `VolumeConditionEvaluator.cs` | ShortRange·거래대금 게이트·재진입 조건 |
+| `cond/buy_indicator.go` | — (Go 신규) | 지표 기반 매수 조건 16종 (RSI 5·Bollinger 5·MA 6) |
 | `cond/sell_*.go` (10개) | `biz/SellEvaluators/` 전체 | 매도 조건 함수 (`sell_` prefix로 분류) |
 | `stg/analyzer.go` | `biz/StockAnalyzer.cs` + `biz/BFunction.cs` (BLogic) | 분석 메인 루프·돌파 게이트 |
 | `stg/buy_rule_engine.go` | `biz/Processors/BuyDecisionProcessor.cs` (개념적 대응) | YAML 룰 평가 엔진 |
@@ -121,6 +122,7 @@ C# 참조 프로젝트: `ssh feihong@192.168.3.120:/home/feihong/code/REST/RESTG
 | `stg/buy_settings.go` | `vo/Settings.cs` | 분석 설정값 |
 | `stg/types.go` | `vo/BuySignalCondition.cs`, `vo/AnalysisResult.cs` | 신호·결과 타입 (Positions 포함) |
 | `rules/strategy1.yaml` | — | 매수 전략 정의 (SingleDef 5종 + MultiDef 3종) |
+| `rules/strategy2.yaml` | — | 지표 기반 매수 전략 6종 (I01~I06) — `RESTGO_BUY_RULES`로 교체 실행 |
 | `rules/sell_strategy1.yaml` | — | 매도 룰 21종 + Composite/전역 설정 |
 | `py/` | — | Python 차트·백테스트·테마 전략 스크립트 |
 | `console/py_runner.go` | — | Go→Python 실행 래퍼 |
@@ -139,7 +141,7 @@ C# 참조 프로젝트: `ssh feihong@192.168.3.120:/home/feihong/code/REST/RESTG
 - **전략별 중복 신호 방지**: 같은 DefBox 구간에서 한 전략은 1회만 발화 (`ctx.LastBuySignalPosition`에 기록, DefBox 변경 시 리셋 — C# `LastBuySignalPosition_StrategyN` 포팅)
 - **돌파 게이트** (`stg/analyzer.go` `checkDefBoxBreakout`): 가격 돌파 + 거래대금(`IsVolumeBreakout`) + ATR 모두 충족해야 돌파 인정. 룰 평가는 **돌파 캔들에서만** 1회 수행되고, 이후 캔들은 ShortRange 사후 평가만 한다 (C# BLogic 정렬)
 - **FollowUp/REST2** (`stg/buy_followup.go`): REST2 S13~S16(`DetermineBuySignal`, 후보군1 상태머신) + S17~S20 재진입 처리. S15/S17/S18은 C#과 동일하게 사문(도달 불가) 게이트 보존
-- `stock/handler.go`가 `stg.LoadStrategy("rules/strategy1.yaml")`로 로드하며, 로드 실패 시 `stg/analyzer.go`의 하드코딩 fallback 로직 사용 (실패가 조용히 무시되므로 주의)
+- `stock/handler.go`가 `stg.LoadStrategy(buyRulesPath())`로 로드 — 기본 `rules/strategy1.yaml`, `RESTGO_BUY_RULES` 환경변수로 교체 가능 (예: `RESTGO_BUY_RULES=rules/strategy2.yaml ./RESTGo stock analyze 005930 250`). 로드 실패 시 `stg/analyzer.go`의 하드코딩 fallback 로직 사용 (실패가 조용히 무시되므로 주의)
 
 ### Python 패키지 구조 (`py/`)
 
