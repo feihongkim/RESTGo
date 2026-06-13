@@ -332,6 +332,16 @@ func IsEMABullArrangement(ctx *box.TradingContext) bool {
 	return c.EMA9 > c.EMA21 && c.EMA21 > c.EMA50
 }
 
+// IsEMA9Above21 는 EMA9 > EMA21 (단기 상승 추세 — EMA50 제외 완화 버전) 인지 확인한다.
+// 워밍업: EMA21 != 0 (21봉 필요)
+func IsEMA9Above21(ctx *box.TradingContext) bool {
+	c := ctx.CandleList[ctx.Position]
+	if c.EMA21 == 0 {
+		return false
+	}
+	return c.EMA9 > c.EMA21
+}
+
 // IsEMA21PullbackBounce 는 최근 lookback 봉 내 EMA21 터치 후 반등했는지 확인한다.
 // 조건: lookback 내 저가 ≤ EMA21인 봉 존재 + 현재 양봉 + 현재 종가 > EMA21
 func IsEMA21PullbackBounce(ctx *box.TradingContext, lookback int) bool {

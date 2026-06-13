@@ -238,6 +238,9 @@ func init() {
 	RegisterCondition("IsEMABullArrangement", func(ctx *box.TradingContext, s Settings) bool {
 		return cond.IsEMABullArrangement(ctx)
 	})
+	RegisterCondition("IsEMA9Above21", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsEMA9Above21(ctx)
+	})
 	RegisterCondition("IsEMA21PullbackBounce", func(ctx *box.TradingContext, s Settings) bool {
 		return cond.IsEMA21PullbackBounce(ctx, s.EMA21PullbackLookback)
 	})

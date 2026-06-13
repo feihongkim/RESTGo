@@ -1,11 +1,6 @@
-# rules/strategy3.yaml — Stage D 빈도 확대 실험 (2026-06-13)
+# rules/strategy3.yaml — Stage 2 파라미터 최적화 반영 (2026-06-13, W12 결과)
 #
-# 변경: T11D_EMABull (EMA9>EMA21>EMA50) → T11D_EMA9o21 (EMA9>EMA21만)
-# 사유: Stage 3 walk-forward 폐기 (avgNet 성과비 0.354 < 0.5)
-#       근본 원인 신호 빈도 부족 (연 ~13 거래) → EMA50 필터 완화로 빈도 확대 시도
-# 백업: rules/strategy3.yaml.t11d (이전 EMABull 버전 보존)
-#
-# Stage D 통과 조건 (jarvis): 빈도 ≥ 연 100/마켓 ∧ 4 게이트 ≥2 마켓 동시 충족 ∧ OOS/IS ≥ 0.5
+# 채택: T11D_EMABull (W11 9변형 → W12 파라미터 플래토 그리드)
 #
 # [Stage 1 결과 — W11]
 #  - 4마켓 PF 모두 ≥ 1.28 (BTC 1.28 / ETH 1.41 / SOL 2.22 / XRP 2.33)
@@ -43,19 +38,19 @@ settings:
   TrailingEMAPeriod: 21
 
 strategies:
-  # T11D_EMA9o21 — Donchian 회귀 + EMA 단기 상승 (Stage D 완화안)
-  - name: T11D_EMA9o21
+  # T11D_EMABull — Donchian 회귀 + EMA 정배열 추세 필터 (★ Stage 1 합격)
+  - name: T11D_EMABull
     evaluation: per_candle
     when:
       - IsDonchianBreakdown       # 단기 신저가 돌파 후 평균회귀
-      - IsEMA9Above21             # EMA9 > EMA21 — 단기 상승만 (EMA50 필터 제거)
+      - IsEMABullArrangement      # EMA9 > EMA21 > EMA50 — 장기 상승 추세 내 눌림만
     any_of:
       - IsRSIOversold             # 동시 과매도 (확증 1)
       - IsVWAPDeviationBelow      # VWAP 하방 괴리 (확증 2)
     when_not:
-      - IsRSIRecoveringFromOversold
-      - IsDonchianBreakout
-    signal: T11D_EMA9o21
+      - IsRSIRecoveringFromOversold  # W9 -0.069 거부 필터
+      - IsDonchianBreakout        # 같은 봉 양방향 동시 발생 무시
+    signal: T11D_EMABull
 
 # === Stage 1 기각 분석 (W11 결과 기준) ===
 #
