@@ -45,17 +45,19 @@ func LoadSellStrategyFile(path string) error {
 	return nil
 }
 
-// AnalyzeWithRules 는 명시적 rules/settings로 분석한다 (그리드 러너용 — activeRules 무시).
+// AnalyzeWithRules 는 명시적 rules/settings로 분석한다 (그리드 러너용).
+// 전역 activeRules를 수정하지 않으므로 병렬 호출 안전.
 func AnalyzeWithRules(candles []*box.Candle, rules []RuleConfig, settings Settings) AnalysisResult {
-	prevRules := activeRules
-	activeRules = rules
-	result := Analyze(candles, settings)
-	activeRules = prevRules
-	return result
+	return analyzeInternal(candles, settings, rules)
 }
 
 // Analyze 는 캔들 리스트에 대해 Box/DefBox 분석을 수행하고 매수 신호를 반환
 func Analyze(candles []*box.Candle, settings Settings) AnalysisResult {
+	return analyzeInternal(candles, settings, activeRules)
+}
+
+// analyzeInternal 은 Analyze/AnalyzeWithRules 공용 구현체.
+func analyzeInternal(candles []*box.Candle, settings Settings, rules []RuleConfig) AnalysisResult {
 	if len(candles) < 6 {
 		return AnalysisResult{}
 	}
@@ -86,7 +88,7 @@ func Analyze(candles []*box.Candle, settings Settings) AnalysisResult {
 		candles[i].Curvekey = box.AnalyzeCurvature(ctx)
 
 		// 3. DefBox 돌파 및 매수 신호 평가 (REST1 + REST2 + FollowUp — 한 캔들 다중 신호 가능)
-		for _, signal := range evaluateBuySignals(ctx, settings) {
+		for _, signal := range evaluateBuySignals(ctx, settings, rules) {
 			result.BuySignals = append(result.BuySignals, signal)
 			if activeSellSettings != nil {
 				pos := buildTradePositionFromSignal(ctx, signal)
@@ -99,15 +101,15 @@ func Analyze(candles []*box.Candle, settings Settings) AnalysisResult {
 		}
 
 		// per-candle 룰 평가 (evaluation: per_candle 룰은 매 캔들에서 평가)
-		for _, signal := range evaluatePerCandleSignals(ctx, settings) {
+		for _, signal := range evaluatePerCandleSignals(ctx, settings, rules) {
 			result.BuySignals = append(result.BuySignals, signal)
-			if activeSellSettings != nil {
-				pos := buildTradePositionFromSignal(ctx, signal)
-				pos.FeeRate = settings.FeeRate
-				pos.SlippageRate = settings.SlippageRate
-				pos.BuyCost = pos.BuyPriceOrigin * (settings.FeeRate + settings.SlippageRate)
-				ctx.AddActivePosition(pos)
-			}
+			// per_candle 포지션은 항상 생성 (E1~E4 적용, activeSellSettings 불필요)
+			pos := buildTradePositionFromSignalNextOpen(ctx, signal, candles)
+			pos.FeeRate = settings.FeeRate
+			pos.SlippageRate = settings.SlippageRate
+			pos.BuyCost = pos.BuyPriceOrigin * (settings.FeeRate + settings.SlippageRate)
+			pos.IsPerCandle = true
+			ctx.AddActivePosition(pos)
 		}
 
 		// 4. Curvekey 변경 시 Exposition 업데이트
@@ -115,17 +117,33 @@ func Analyze(candles []*box.Candle, settings Settings) AnalysisResult {
 			ctx.Exposition = box.CalculateExposition(ctx.BoxList[len(ctx.BoxList)-1])
 		}
 
-		// 5. 매도 평가 (활성 포지션 순회)
+		// 5a. per_candle 포지션: E1~E4 청산 패스 (항상 활성)
+		{
+			var nextCandle *box.Candle
+			if i+1 < len(candles) {
+				nextCandle = candles[i+1]
+			}
+			for _, p := range ctx.ActivePositions {
+				if !p.IsActive || !p.IsPerCandle {
+					continue
+				}
+				cur := ctx.GetCurrentCandle()
+				if shouldExit, reason, fillPrice, weight := Evaluate15mExit(p, cur, nextCandle, ctx.Position, settings); shouldExit {
+					execute15mExit(ctx, p, reason, fillPrice, weight)
+				}
+			}
+		}
+
+		// 5b. 일봉 포지션: 기존 매도 룰 엔진 (IsPerCandle 포지션 제외)
 		if activeSellSettings != nil {
 			for _, p := range ctx.ActivePositions {
-				if !p.IsActive {
+				if !p.IsActive || p.IsPerCandle {
 					continue
 				}
 				decision := EvaluateSellSignals(ctx, p, *activeSellSettings)
 				if decision.ShouldSell {
 					ExecutePartialSell(ctx, p, decision.PrimaryReason, decision.SellWeight, *activeSellSettings)
 				} else if decision.RequiresHoldingExtensionUpdate {
-					// Path 4: Period Expiry 후 홀딩 연장 평가
 					if cond.CanExtendHoldingOnExpiry(ctx, p) {
 						p.IsWaitingForSellSignalAfterExpiry = true
 						p.PeriodExpiredAtPosition = ctx.Position
@@ -142,17 +160,37 @@ func Analyze(candles []*box.Candle, settings Settings) AnalysisResult {
 	return result
 }
 
-// buildTradePositionFromSignal 은 매수 신호로부터 TradePosition을 생성한다.
+// buildTradePositionFromSignal 은 매수 신호로부터 TradePosition을 생성한다 (same-candle fill, on_breakout용).
 func buildTradePositionFromSignal(ctx *box.TradingContext, signal BuySignal) *box.TradePosition {
 	cur := ctx.GetCurrentCandle()
-	buyPrice := 0.0
-	buyPriceOrigin := 0.0
-	buyDate := ""
+	buyPrice, buyPriceOrigin, buyDate := 0.0, 0.0, ""
 	if cur != nil {
 		buyPrice = cur.Close
 		buyPriceOrigin = cur.CloseOrigin
 		buyDate = cur.Date
 	}
+	return buildPosition(ctx, signal, buyPrice, buyPriceOrigin, buyDate)
+}
+
+// buildTradePositionFromSignalNextOpen 은 per_candle 신호 체결을 다음 봉 시가로 설정한다 (look-ahead 방지).
+func buildTradePositionFromSignalNextOpen(ctx *box.TradingContext, signal BuySignal, candles []*box.Candle) *box.TradePosition {
+	pos := ctx.Position
+	buyPrice, buyPriceOrigin, buyDate := 0.0, 0.0, ""
+	if cur := ctx.GetCurrentCandle(); cur != nil {
+		buyPrice = cur.Close
+		buyPriceOrigin = cur.CloseOrigin
+		buyDate = cur.Date
+	}
+	if pos+1 < len(candles) {
+		next := candles[pos+1]
+		buyPrice = next.Open
+		buyPriceOrigin = next.OpenOrigin
+		buyDate = next.Date
+	}
+	return buildPosition(ctx, signal, buyPrice, buyPriceOrigin, buyDate)
+}
+
+func buildPosition(ctx *box.TradingContext, signal BuySignal, buyPrice, buyPriceOrigin float64, buyDate string) *box.TradePosition {
 	tradeId := fmt.Sprintf("%s_%s_%s_%d", ctx.Shcode, buyDate, signal.Reason, signal.Position)
 	p := box.NewTradePosition(tradeId, signal.Reason, signal.Position, buyPrice, buyPriceOrigin, buyDate)
 	p.DefBoxIndex = ctx.DefboxIndex
@@ -160,11 +198,9 @@ func buildTradePositionFromSignal(ctx *box.TradingContext, signal BuySignal) *bo
 	p.MainboxPosition = ctx.MainboxPosition
 	if mainBox := ctx.GetMainBox(); mainBox != nil {
 		p.MainBoxPrice = mainBox.Price
-		p.MainBoxIndex = -1 // BoxList 인덱스 별도 추적 필요 시 채움
+		p.MainBoxIndex = -1
 	}
 	// C# VirtualTradingBuy: 전략 발화 시점의 컨텍스트 값을 그대로 복사 (VirtualTrading.cs:238-239)
-	// 주의: PenPosition은 DefBox 형성 위치가 아니라 "전략 발화 캔들" — 매도 측
-	// IsTrendEntryFailure2WithPosition의 오실로 스캔 시작점으로 사용되므로 의미가 중요
 	p.PenPosition = ctx.PenPosition
 	p.MomentumPosition = ctx.MomentumPosition
 	return p
@@ -176,7 +212,7 @@ func buildTradePositionFromSignal(ctx *box.TradingContext, signal BuySignal) *bo
 //  3. DamChecker==2 (돌파 이후 캔들) → ShortRange 사후 평가만
 //  4. 후보군1 상태 → 추가 매수 기회
 //  5. FollowUp 재진입 처리 (매 캔들)
-func evaluateBuySignals(ctx *box.TradingContext, s Settings) []BuySignal {
+func evaluateBuySignals(ctx *box.TradingContext, s Settings, rules []RuleConfig) []BuySignal {
 	var out []BuySignal
 
 	if ctx.DefChecker != 0 {
@@ -193,7 +229,7 @@ func evaluateBuySignals(ctx *box.TradingContext, s Settings) []BuySignal {
 				if checkDefBoxBreakout(ctx, s) {
 					ctx.DamChecker = 2
 					// REST1 룰 평가 — C#과 동일하게 돌파 캔들에서만 수행
-					if sig := checkBuyConditions(ctx, s); sig.Triggered {
+					if sig := checkBuyConditions(ctx, s, rules); sig.Triggered {
 						out = append(out, sig)
 					}
 					// REST2 DetermineBuySignal (S13~S16)
@@ -269,10 +305,10 @@ func buildTriggeredSignal(ctx *box.TradingContext, reason string) BuySignal {
 	return sig
 }
 
-func checkBuyConditions(ctx *box.TradingContext, s Settings) BuySignal {
+func checkBuyConditions(ctx *box.TradingContext, s Settings, rules []RuleConfig) BuySignal {
 	// 룰 엔진 전략이 로드된 경우 우선 적용
-	if len(activeRules) > 0 {
-		signal, stratName := EvaluateRules(activeRules, ctx, s)
+	if len(rules) > 0 {
+		signal, stratName := EvaluateRules(rules, ctx, s)
 		if signal != "" {
 			// C# 전략 발화 시 상태 기록: PenPosition + SetBuySignal(즉시매수, 전략명, 신호명)
 			ctx.PenPosition = ctx.Position
@@ -325,12 +361,12 @@ func findLastDefBoxIndex(boxList []*box.Box) int {
 // evaluatePerCandleSignals 는 evaluation: per_candle 로 표시된 룰을 매 캔들에서 평가한다.
 // 쿨다운: 동일 룰은 PerCandleCooldownBars 봉 내 재발화 불가.
 // 포지션 중복: 같은 전략명의 활성 포지션이 있으면 스킵.
-func evaluatePerCandleSignals(ctx *box.TradingContext, s Settings) []BuySignal {
-	if len(activeRules) == 0 {
+func evaluatePerCandleSignals(ctx *box.TradingContext, s Settings, rules []RuleConfig) []BuySignal {
+	if len(rules) == 0 {
 		return nil
 	}
 	var signals []BuySignal
-	for _, rule := range activeRules {
+	for _, rule := range rules {
 		if rule.Evaluation != "per_candle" {
 			continue
 		}

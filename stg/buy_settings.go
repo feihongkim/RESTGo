@@ -46,6 +46,16 @@ type Settings struct {
 	// 매 캔들 평가 (per_candle 룰)
 	PerCandleCooldownBars int // 발화 후 재발화 금지 봉 수 (기본 4)
 
+	// EMA 풀백 조건
+	EMA21PullbackLookback int // EMA21 풀백 반등 탐색 구간 (기본 3)
+
+	// per_candle 포지션 청산 (E1~E4)
+	ATRStopMultiplier   float64 // E1 ATR 스탑 배수 (기본 1.5)
+	ATRTargetMultiplier float64 // E2 타겟 ATR 배수 (기본 2.0)
+	TargetSellWeight    float64 // E2 부분청산 비율 (기본 0.5)
+	TrailingEMAPeriod   int     // E3 트레일링 EMA 기간 (기본 21)
+	TimeExitBars        int     // E4 시간 청산 봉 수 (기본 16)
+
 	// ADX/MACD/Stoch 임계값
 	ADXTrendThreshold        float64 // ADX 추세 판단 임계 (기본 20)
 	MACDHistRisingBars       int     // MACD 히스토그램 상승 확인 봉 수 (기본 3)
@@ -97,6 +107,14 @@ func DefaultSettings() Settings {
 		SlippageRate: 0.0005,
 
 		PerCandleCooldownBars: 4,
+
+		EMA21PullbackLookback: 3,
+
+		ATRStopMultiplier:   1.5,
+		ATRTargetMultiplier: 2.0,
+		TargetSellWeight:    0.5,
+		TrailingEMAPeriod:   21,
+		TimeExitBars:        16,
 
 		ADXTrendThreshold:        20,
 		MACDHistRisingBars:       3,

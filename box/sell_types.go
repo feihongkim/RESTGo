@@ -176,6 +176,10 @@ type TradePosition struct {
 	// === Holding Extension 상태 ===
 	IsWaitingForSellSignalAfterExpiry bool
 	PeriodExpiredAtPosition           int
+
+	// === per_candle 포지션 전용 (15m 단타) ===
+	IsPerCandle bool // true: 15분봉 per_candle 룰로 진입한 포지션
+	TargetHit   bool // E2 타겟 부분청산 완료 여부 (E3 트레일링 활성화 게이트)
 }
 
 // NewTradePosition 은 매수 신호 발생 시 새 포지션을 생성

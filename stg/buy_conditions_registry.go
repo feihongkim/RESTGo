@@ -233,4 +233,18 @@ func init() {
 	RegisterCondition("IsPriceBelowAllMa", func(ctx *box.TradingContext, s Settings) bool {
 		return cond.IsPriceBelowAllMa(ctx)
 	})
+
+	// ── EMA 조건 ──────────────────────────────────────────────
+	RegisterCondition("IsEMABullArrangement", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsEMABullArrangement(ctx)
+	})
+	RegisterCondition("IsEMA21PullbackBounce", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsEMA21PullbackBounce(ctx, s.EMA21PullbackLookback)
+	})
+	RegisterCondition("IsPriceAboveEMA50", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsPriceAboveEMA50(ctx)
+	})
+	RegisterCondition("IsVWAPDeviationBelow", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsVWAPDeviationBelow(ctx, s.VWAPDeviationK)
+	})
 }

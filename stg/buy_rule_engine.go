@@ -211,6 +211,30 @@ func applySettingsOverrides(s *Settings, overrides map[string]interface{}) {
 			if f, ok := toFloat64(v); ok {
 				s.StochOverboughtThreshold = f
 			}
+		case "EMA21PullbackLookback":
+			if i, ok := toInt(v); ok {
+				s.EMA21PullbackLookback = i
+			}
+		case "ATRStopMultiplier":
+			if f, ok := toFloat64(v); ok {
+				s.ATRStopMultiplier = f
+			}
+		case "ATRTargetMultiplier":
+			if f, ok := toFloat64(v); ok {
+				s.ATRTargetMultiplier = f
+			}
+		case "TargetSellWeight":
+			if f, ok := toFloat64(v); ok {
+				s.TargetSellWeight = f
+			}
+		case "TrailingEMAPeriod":
+			if i, ok := toInt(v); ok {
+				s.TrailingEMAPeriod = i
+			}
+		case "TimeExitBars":
+			if i, ok := toInt(v); ok {
+				s.TimeExitBars = i
+			}
 		}
 	}
 }

@@ -317,3 +317,55 @@ func IsPriceBelowAllMa(ctx *box.TradingContext) bool {
 	}
 	return c.Close < c.Ma5 && c.Close < c.Ma20 && c.Close < c.Ma60
 }
+
+// ============================================================================
+// EMA 조건 (원본가 기준, EMA9/21/50)
+// ============================================================================
+
+// IsEMABullArrangement 는 EMA9 > EMA21 > EMA50 (EMA 정배열) 인지 확인한다.
+// 워밍업: EMA50 != 0 (50봉 필요)
+func IsEMABullArrangement(ctx *box.TradingContext) bool {
+	c := ctx.CandleList[ctx.Position]
+	if c.EMA50 == 0 {
+		return false
+	}
+	return c.EMA9 > c.EMA21 && c.EMA21 > c.EMA50
+}
+
+// IsEMA21PullbackBounce 는 최근 lookback 봉 내 EMA21 터치 후 반등했는지 확인한다.
+// 조건: lookback 내 저가 ≤ EMA21인 봉 존재 + 현재 양봉 + 현재 종가 > EMA21
+func IsEMA21PullbackBounce(ctx *box.TradingContext, lookback int) bool {
+	pos := ctx.Position
+	if pos < lookback {
+		return false
+	}
+	cur := ctx.CandleList[pos]
+	if cur.EMA21 == 0 || cur.EMA50 == 0 {
+		return false
+	}
+	if cur.CloseOrigin <= cur.EMA21 || cur.CloseOrigin <= cur.OpenOrigin {
+		return false
+	}
+	for i := pos - lookback; i < pos; i++ {
+		c := ctx.CandleList[i]
+		if c.EMA21 > 0 && c.LowOrigin <= c.EMA21 {
+			return true
+		}
+	}
+	return false
+}
+
+// IsPriceAboveEMA50 는 현재 종가가 EMA50 위에 있는지 확인한다.
+func IsPriceAboveEMA50(ctx *box.TradingContext) bool {
+	c := ctx.CandleList[ctx.Position]
+	if c.EMA50 == 0 {
+		return false
+	}
+	return c.CloseOrigin > c.EMA50
+}
+
+// IsVWAPDeviationBelow 는 종가가 VWAP - k×StdDev 이하로 이탈했는지 확인한다.
+// (IsVWAPDeviation(k=-VWAPDeviationK) 의 명시적 별칭 — edge_runner용)
+func IsVWAPDeviationBelow(ctx *box.TradingContext, k float64) bool {
+	return IsVWAPDeviation(ctx, -k)
+}

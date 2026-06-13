@@ -262,3 +262,130 @@ func TestIsRSIFallingFromOverbought_WarmupGuard(t *testing.T) {
 		t.Error("워밍업 전 false 기대")
 	}
 }
+
+// ─── EMA 조건 ────────────────────────────────────────────────────────────────
+
+func TestIsEMABullArrangement_WarmupGuard(t *testing.T) {
+	candles := make15mCandles(linearCloses(10, 10000, 1))
+	ctx := newCtx15m(candles, 5)
+	if IsEMABullArrangement(ctx) {
+		t.Error("워밍업 전 EMA 정배열 false 기대")
+	}
+}
+
+func TestIsEMABullArrangement_Rising(t *testing.T) {
+	// 강한 상승 추세 100봉 — EMA9 > EMA21 > EMA50 구간이 존재해야 함
+	candles := make15mCandles(linearCloses(100, 10000, 100))
+	hit := false
+	for i := 60; i < len(candles); i++ {
+		ctx := newCtx15m(candles, i)
+		if IsEMABullArrangement(ctx) {
+			hit = true
+			break
+		}
+	}
+	if !hit {
+		t.Error("강한 상승 추세에서 EMA 정배열 true 기대")
+	}
+}
+
+func TestIsEMA21PullbackBounce_WarmupGuard(t *testing.T) {
+	candles := make15mCandles(linearCloses(10, 10000, 1))
+	ctx := newCtx15m(candles, 5)
+	if IsEMA21PullbackBounce(ctx, 3) {
+		t.Error("워밍업 전 EMA21 풀백 반등 false 기대")
+	}
+}
+
+func TestIsEMA21PullbackBounce_NoPanicLookback(t *testing.T) {
+	candles := make15mCandles(linearCloses(80, 10000, 50))
+	ctx := newCtx15m(candles, 70)
+	_ = IsEMA21PullbackBounce(ctx, 3)
+}
+
+func TestIsPriceAboveEMA50_WarmupGuard(t *testing.T) {
+	candles := make15mCandles(linearCloses(10, 10000, 1))
+	ctx := newCtx15m(candles, 5)
+	if IsPriceAboveEMA50(ctx) {
+		t.Error("워밍업 전 EMA50 위 false 기대")
+	}
+}
+
+func TestIsPriceAboveEMA50_Rising(t *testing.T) {
+	// 상승 추세 100봉 — 종가 > EMA50이 성립해야 함
+	candles := make15mCandles(linearCloses(100, 10000, 100))
+	hit := false
+	for i := 60; i < len(candles); i++ {
+		ctx := newCtx15m(candles, i)
+		if IsPriceAboveEMA50(ctx) {
+			hit = true
+			break
+		}
+	}
+	if !hit {
+		t.Error("상승 추세에서 종가 > EMA50 true 기대")
+	}
+}
+
+// ─── IsVWAPDeviationBelow ─────────────────────────────────────────────────────
+
+func TestIsVWAPDeviationBelow_NoPanic(t *testing.T) {
+	candles := make15mCandles(linearCloses(50, 10000, 100))
+	ctx := newCtx15m(candles, 40)
+	_ = IsVWAPDeviationBelow(ctx, 1.5)
+}
+
+func TestIsVWAPDeviationBelow_WarmupGuard(t *testing.T) {
+	// VWAP/VWAPStdDev가 0이면 false를 반환해야 한다
+	candles := make([]*box.Candle, 3)
+	for i := range candles {
+		candles[i] = &box.Candle{
+			Shcode: "TEST", Date: "20260101",
+			CloseOrigin: 10000,
+			VWAP:        0, // 워밍업 없음
+			VWAPStdDev:  0,
+		}
+	}
+	ctx := newCtx15m(candles, 2)
+	if IsVWAPDeviationBelow(ctx, 1.5) {
+		t.Error("VWAP=0일 때 false 기대")
+	}
+}
+
+func TestIsVWAPDeviationBelow_TrueWhenFarBelow(t *testing.T) {
+	// 종가가 VWAP 아래로 크게 이탈한 경우 true 기대
+	candles := make([]*box.Candle, 3)
+	for i := range candles {
+		candles[i] = &box.Candle{
+			Shcode:      "TEST",
+			Date:        "20260101",
+			CloseOrigin: 9000, // VWAP(10000) 보다 훨씬 아래
+			VWAP:        10000,
+			VWAPStdDev:  100,
+		}
+	}
+	ctx := newCtx15m(candles, 2)
+	// 9000 < 10000 - 1.5*100 = 9850 → true
+	if !IsVWAPDeviationBelow(ctx, 1.5) {
+		t.Error("종가가 VWAP - 1.5σ 아래일 때 true 기대")
+	}
+}
+
+func TestIsVWAPDeviationBelow_FalseWhenNear(t *testing.T) {
+	// 종가가 VWAP 가까이 있으면 false 기대
+	candles := make([]*box.Candle, 3)
+	for i := range candles {
+		candles[i] = &box.Candle{
+			Shcode:      "TEST",
+			Date:        "20260101",
+			CloseOrigin: 9950, // VWAP - 1.5σ = 9850 보다 위
+			VWAP:        10000,
+			VWAPStdDev:  100,
+		}
+	}
+	ctx := newCtx15m(candles, 2)
+	// 9950 < 9850? → false
+	if IsVWAPDeviationBelow(ctx, 1.5) {
+		t.Error("종가가 VWAP - 1.5σ 위일 때 false 기대")
+	}
+}

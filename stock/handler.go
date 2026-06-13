@@ -35,6 +35,7 @@ func Handle(args []string) {
 		fmt.Println("  ./RESTGo stock analyze <종목코드> [일수=250]")
 		fmt.Println("  ./RESTGo stock batch [일수=250]")
 		fmt.Println("  ./RESTGo stock gridtest <grid_yaml> [output_json]")
+		fmt.Println("  ./RESTGo stock edgetest [markets_csv] [output_json]")
 		return
 	}
 
@@ -45,12 +46,18 @@ func Handle(args []string) {
 		handleBatch(args[1:])
 	case "gridtest":
 		handleGridTest(args[1:])
+	case "edgetest":
+		handleEdgeTest(args[1:])
+	case "baseline":
+		handleBaselineBacktest(args[1:])
 	default:
 		fmt.Printf("알 수 없는 stock 명령: %s\n", args[0])
 		fmt.Println("사용법:")
 		fmt.Println("  ./RESTGo stock analyze <종목코드> [일수=250]")
 		fmt.Println("  ./RESTGo stock batch [일수=250]")
 		fmt.Println("  ./RESTGo stock gridtest <grid_yaml> [output_json]")
+		fmt.Println("  ./RESTGo stock edgetest [markets_csv] [output_json]")
+		fmt.Println("  ./RESTGo stock baseline [markets_csv] [output_json] [strategy_yaml]")
 	}
 }
 
