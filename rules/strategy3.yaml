@@ -1,87 +1,78 @@
-# rules/strategy3.yaml — jarvis 확정 설계 (2026-06-13)
-# Stage 0 결과에 따라 확증·거부 조건은 교체될 수 있다 (트리거는 유지)
+# rules/strategy3.yaml — Stage 1 채택 (2026-06-13, W11 결과 반영)
+#
+# 채택: T11D_EMABull (W11 9변형 중 유일 합격)
+#  - 4마켓 PF 모두 ≥ 1.28 (BTC 1.28 / ETH 1.41 / SOL 2.22 / XRP 2.33)
+#  - 4마켓 avgNet 모두 양수 (BTC +0.10 / ETH +0.16 / SOL +0.47 / XRP +0.39)
+#  - 4마켓 win 70~82%
+#  - 게이트 기준(avgNet > +0.30 ∧ trades ≥ 100 ∧ PF > 1.3) 동시 충족 마켓은 없지만,
+#    "4/4 양수 + PF 1.28+ 일관성"이 W9 baseline 20/20 음수 대비 명확한 신호 진전.
+#  - BTC 미달(+0.10/1.28)은 Stage 2 임계값 그리드(EMA period, ATR multiplier 등)에서 개선 시도.
+#
+# 청산 파라미터: W10-B plateau 최적값 (ATRSt 3.0 / ATRTg 2.0 / TimX 32)
+#
+# 이전 룰(T01/T11_base/T12)은 W11에서 모두 게이트 미달로 폐기 — 아래 ## 기각 분석 참조.
+# 9변형 비교 데이터: results/baseline_t_rules_stage1.json
+
 settings:
   FeeRate: 0.0005
   SlippageRate: 0.0005
   PerCandleCooldownBars: 4
   ADXTrendThreshold: 20
-  RSIOversoldThreshold: 35
-  RSIOverboughtThreshold: 70
+  RSIOversoldThreshold: 30
   VWAPDeviationK: 1.5
-  VolumeZScoreThreshold: 2.0
-  ATRStopMultiplier: 1.5
+  ATRStopMultiplier: 3.0          # W10-B plateau + W11 검증
   ATRTargetMultiplier: 2.0
+  TimeExitBars: 32                # 8시간
   TargetSellWeight: 0.5
   TrailingEMAPeriod: 21
-  TimeExitBars: 16
-  EMA21PullbackLookback: 3
 
 strategies:
-  # T01 VWAP 회귀 — 회귀계 (횡보장 전용)
-  # 트리거: VWAP -1.5σ 이탈(과매도 괴리) / 확증: RSI 과매도 or 거래량 / 거부: 추세장·역배열
-  - name: T01_VWAPReversion
+  # T11D_EMABull — Donchian 회귀 + EMA 정배열 추세 필터 (★ Stage 1 합격)
+  - name: T11D_EMABull
     evaluation: per_candle
     when:
-      - IsVWAPDeviationBelow
-      - IsRSIOversold
+      - IsDonchianBreakdown       # 단기 신저가 돌파 후 평균회귀
+      - IsEMABullArrangement      # EMA9 > EMA21 > EMA50 — 장기 상승 추세 내 눌림만
     any_of:
-      - IsVolumeZScoreSpike
-      - IsBBLowerTouch
+      - IsRSIOversold             # 동시 과매도 (확증 1)
+      - IsVWAPDeviationBelow      # VWAP 하방 괴리 (확증 2)
     when_not:
-      - IsADXTrending
-      - IsMaInverseArrangement
-    signal: VWAP하방괴리회귀매수
+      - IsRSIRecoveringFromOversold  # W9 -0.069 거부 필터
+      - IsDonchianBreakout        # 같은 봉 양방향 동시 발생 무시
+    signal: T11D_EMABull
 
-  # T03 EMA 풀백 — 추세계 (가장 범용)
-  # 트리거: EMA 정배열 + 21선 풀백 반등 / 확증: MACD 히스토그램 / 거부: 과매수
-  - name: T03_EMAPullback
-    evaluation: per_candle
-    when:
-      - IsEMABullArrangement
-      - IsEMA21PullbackBounce
-    any_of:
-      - IsMACDHistogramRising
-      - IsOBVRising
-    when_not:
-      - IsRSIOverbought
-      - IsBBUpperReject
-    signal: EMA풀백반등매수
-
-  # T04a 스퀴즈 돌파 — 변동성돌파계 (BB스퀴즈 + Keltner 동시돌파)
-  - name: T04a_SqueezeBreakout
-    evaluation: per_candle
-    when:
-      - IsBBSqueezeBreakout
-      - IsKeltnerBreakout
-    any_of:
-      - IsVolumeZScoreSpike
-    when_not:
-      - IsRSIOverbought
-    signal: BB스퀴즈돌파매수
-
-  # T04b NR 돌파 — 변동성돌파계 변형 (수축 후 레인지 돌파)
-  - name: T04b_NRDonchianBreakout
-    evaluation: per_candle
-    when:
-      - IsNarrowRange
-      - IsDonchianBreakout
-    any_of:
-      - IsVolumeZScoreSpike
-      - IsDIBullish
-    when_not:
-      - IsRSIOverbought
-    signal: NR돌파매수
-
-  # T05 SuperTrend 추종 — 추세계 (추세 지속성 활용)
-  - name: T05_SuperTrendFollow
-    evaluation: per_candle
-    when:
-      - IsSuperTrendBullish
-      - IsADXTrending
-    any_of:
-      - IsAboveVWAP
-      - IsOBVRising
-    when_not:
-      - IsRSIFallingFromOverbought
-      - IsVWAPDeviationBelow
-    signal: SuperTrend추종매수
+# === Stage 1 기각 분석 (W11 결과 기준) ===
+#
+# T11A_Base / T11F_NoBBRebound (동일):
+#   - 트리거가 IsDonchianBreakdown 단독, EMA/MA 필터 없음 → 트레이드 4000+ /4마켓
+#   - 4마켓 모두 avgNet 음수 (-0.04 ~ -0.09), PF 0.83~0.95
+#   - 거부 필터 IsBBReboundFromLower는 IsDonchianBreakdown과 의미상 배타 (확인 — T11A=T11F)
+#
+# T11B_StrictRSI:
+#   - 트리거 [IsDonchianBreakdown + IsRSIOversold], any_of 없음 → 1300~2400 트레이드
+#   - 4마켓 양수지만 avgNet 0.02~0.08 / PF 1.03~1.11 (게이트 미달)
+#   - EMA 필터 없이도 양수지만, 거래당 엣지가 비용 회수 수준
+#
+# T11C_StrictRSI_NoTrend / T11G_AllFilters (동일):
+#   - ADX 추세 거부 + BB rebound 거부 추가 → 189~429 트레이드
+#   - SOL만 +0.018, 나머지 3마켓 -0.03 ~ -0.04 (게이트 미달)
+#   - ADX 거부 필터가 양호 신호도 같이 거부 (ADX > 20인 트렌딩 구간 제외)
+#
+# T11E_MAProper:
+#   - EMA 대신 MA(SMA) 정배열 필터 → ETH/XRP는 우수 (PF 2.58~4.58)
+#   - SOL/BTC는 미달 (-0.148/-0.009, PF 0.83/0.98)
+#   - 4마켓 일관성 부족 + ETH/XRP 트레이드 < 100 → 게이트 미충족
+#
+# T12_RSIOnly / T01v2_VWAPReversion (동일):
+#   - RSI Oversold 단독 트리거, VWAP 또는 MA 확증
+#   - SOL만 +0.024, 나머지 3마켓 -0.06 ~ -0.16 음수 (게이트 미달)
+#   - RSI Oversold가 두 룰의 결정 인자 (확인 — T12=T01v2 정확 일치)
+#
+# 핵심 발견:
+#   1. EMA 정배열 필터(IsEMABullArrangement)가 T11A→T11D 전환의 핵심 — 4마켓 음수→양수 일관 전환
+#   2. T11A=T11F, T11C=T11G, T12=T01v2 정확 일치 → 거부 필터의 의미적 중복·트리거 도미넌스 확인
+#   3. MDD 100%는 단일룰 전 자본 운용 가정의 산식 한계 (Stage 5 포지션 사이징에서 해소)
+#
+# === 이전 단계 폐기 (참고) ===
+# W9 (Stage 0 8.5년치): T03_EMAPullback / T04a_SqueezeBreakout / T04b_NRDonchianBreakout / T05_SuperTrendFollow (20/20 음수)
+# W11 (Stage 1): T01_VWAPReversion / T11_DonchianRebound(=T11A) / T12_RSIOversoldBounce(=T12) — 위 분석 참조
