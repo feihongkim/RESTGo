@@ -24,11 +24,12 @@ type EdgeStudyOutput struct {
 	Results     []EdgeResult  `json:"results"`
 }
 
-// EdgePeriod 는 분석 기간 정보
+// EdgePeriod 는 분석 기간 정보 (IS = In-Sample, OOS = Out-of-Sample)
 type EdgePeriod struct {
-	From            string `json:"from"`
-	To              string `json:"to"`
-	OOSExcludedFrom string `json:"oos_excluded_from"`
+	IsFrom  string `json:"is_from"`
+	IsTo    string `json:"is_to"`
+	OOSFrom string `json:"oos_from"`
+	OOSTo   string `json:"oos_to"`
 }
 
 // BaselineRow 는 무조건 T+H 수익률 베이스라인 (마켓×호라이즌)
@@ -141,27 +142,28 @@ func runEdgeStudy(markets []string, outputPath string) {
 	fmt.Printf("[edge] 마켓 %d개, 조건 %d종, 호라이즌 %v\n", len(markets), len(edge37Conditions), edgeHorizons)
 
 	type marketResult struct {
-		market    string
-		candles   []*box.Candle
-		baseline  []BaselineRow
-		results   []EdgeResult
-		oosFrom   string
-		isFrom    string
-		isTo      string
+		market   string
+		candles  []*box.Candle
+		baseline []BaselineRow
+		results  []EdgeResult
+		isFrom   string
+		isTo     string
+		oosFrom  string
+		oosTo    string
 	}
 
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	var allBaselines []BaselineRow
 	var allResults []EdgeResult
-	var globalFrom, globalTo, globalOOSFrom string
+	var globalIsFrom, globalIsTo, globalOOSFrom, globalOOSTo string
 
 	for _, market := range markets {
 		wg.Add(1)
 		go func(mkt string) {
 			defer wg.Done()
 
-			candles, err := box.FetchUpbitCandles15m(db, mkt, 100000)
+			candles, err := box.FetchUpbitCandles15m(db, mkt, 400000)
 			if err != nil || len(candles) < warmupBars+edgeHorizons[len(edgeHorizons)-1]+2 {
 				fmt.Printf("[edge] %s 캔들 부족 또는 로드 실패 (%d봉)\n", mkt, len(candles))
 				return
@@ -171,20 +173,19 @@ func runEdgeStudy(markets []string, outputPath string) {
 			// OOS 제외: 마지막 oosMonths 봉 제외
 			isEnd := len(candles) - oosMonths
 			if isEnd < warmupBars+edgeHorizons[len(edgeHorizons)-1]+2 {
-				isEnd = len(candles) // OOS 제외 후에도 데이터 부족이면 전체 사용
-			}
-			oosFrom := ""
-			if len(candles) > oosMonths {
-				oosFrom = candles[len(candles)-oosMonths].Date
+				isEnd = len(candles)
 			}
 
-			isFrom := ""
+			isFrom := candles[0].Date
 			isTo := ""
-			if len(candles) > 0 {
-				isFrom = candles[0].Date
-			}
 			if isEnd > 0 && isEnd <= len(candles) {
 				isTo = candles[isEnd-1].Date
+			}
+			oosFrom := ""
+			oosTo := ""
+			if len(candles) > oosMonths && isEnd < len(candles) {
+				oosFrom = candles[isEnd].Date
+				oosTo = candles[len(candles)-1].Date
 			}
 
 			baselines, results := analyzeMarketEdge(mkt, candles[:isEnd], s)
@@ -192,19 +193,22 @@ func runEdgeStudy(markets []string, outputPath string) {
 			mu.Lock()
 			allBaselines = append(allBaselines, baselines...)
 			allResults = append(allResults, results...)
-			if globalFrom == "" || isFrom < globalFrom {
-				globalFrom = isFrom
+			if globalIsFrom == "" || isFrom < globalIsFrom {
+				globalIsFrom = isFrom
 			}
-			if globalTo == "" || isTo > globalTo {
-				globalTo = isTo
+			if globalIsTo == "" || isTo > globalIsTo {
+				globalIsTo = isTo
 			}
-			if globalOOSFrom == "" || oosFrom < globalOOSFrom {
+			if globalOOSFrom == "" || (oosFrom != "" && oosFrom < globalOOSFrom) {
 				globalOOSFrom = oosFrom
+			}
+			if globalOOSTo == "" || oosTo > globalOOSTo {
+				globalOOSTo = oosTo
 			}
 			mu.Unlock()
 
-			fmt.Printf("[edge] %s 완료: IS %s~%s, OOS from %s, 조건 결과 %d건\n",
-				mkt, isFrom, isTo, oosFrom, len(results))
+			fmt.Printf("[edge] %s 완료: IS %s~%s, OOS %s~%s, 조건 결과 %d건\n",
+				mkt, isFrom, isTo, oosFrom, oosTo, len(results))
 		}(market)
 	}
 	wg.Wait()
@@ -212,9 +216,10 @@ func runEdgeStudy(markets []string, outputPath string) {
 	output := EdgeStudyOutput{
 		GeneratedAt: time.Now().Format(time.RFC3339),
 		Period: EdgePeriod{
-			From:            globalFrom,
-			To:              globalTo,
-			OOSExcludedFrom: globalOOSFrom,
+			IsFrom:  globalIsFrom,
+			IsTo:    globalIsTo,
+			OOSFrom: globalOOSFrom,
+			OOSTo:   globalOOSTo,
 		},
 		Baseline: allBaselines,
 		Results:  allResults,
@@ -496,6 +501,15 @@ type BaselineTradeRow struct {
 	NetReturn     float64 `json:"net_return_pct"`
 }
 
+// ByYearRow 는 연도별 분해 통계 (5거래 미만이면 평가 지표 null)
+type ByYearRow struct {
+	Year         int      `json:"year"`
+	Trades       int      `json:"trades"`
+	WinRate      *float64 `json:"win_rate"`
+	AvgNetReturn *float64 `json:"avg_net_return_pct"`
+	ProfitFactor *float64 `json:"pf"`
+}
+
 // BaselineStratRow 는 룰×마켓 집계 통계
 type BaselineStratRow struct {
 	Market       string             `json:"market"`
@@ -505,6 +519,7 @@ type BaselineStratRow struct {
 	AvgNetReturn float64            `json:"avg_net_return_pct"`
 	ProfitFactor float64            `json:"profit_factor"`
 	MaxDrawdown  float64            `json:"max_drawdown_pct"`
+	ByYear       []ByYearRow        `json:"by_year"`
 	Trades       []BaselineTradeRow `json:"trades"`
 }
 
@@ -556,7 +571,7 @@ func runBaselineBacktest(stratPath string, markets []string, outputPath string) 
 
 	var mu sync.Mutex
 	var allRows []BaselineStratRow
-	var globalFrom, globalTo, globalOOSFrom string
+	var globalIsFrom, globalIsTo, globalOOSFrom, globalOOSTo string
 	var wg sync.WaitGroup
 
 	for _, market := range markets {
@@ -564,7 +579,7 @@ func runBaselineBacktest(stratPath string, markets []string, outputPath string) 
 		go func(mkt string) {
 			defer wg.Done()
 
-			candles, err := box.FetchUpbitCandles15m(db, mkt, 100000)
+			candles, err := box.FetchUpbitCandles15m(db, mkt, 400000)
 			if err != nil || len(candles) < 100 {
 				fmt.Printf("[baseline] %s 캔들 부족 또는 로드 실패 (%d봉)\n", mkt, len(candles))
 				return
@@ -575,17 +590,19 @@ func runBaselineBacktest(stratPath string, markets []string, outputPath string) 
 			if isEnd < 100 {
 				isEnd = len(candles)
 			}
-			oosFrom := ""
-			if len(candles) > oosMonths {
-				oosFrom = candles[len(candles)-oosMonths].Date
-			}
 			isFrom := candles[0].Date
 			isTo := candles[isEnd-1].Date
+			oosFrom := ""
+			oosTo := ""
+			if len(candles) > oosMonths && isEnd < len(candles) {
+				oosFrom = candles[isEnd].Date
+				oosTo = candles[len(candles)-1].Date
+			}
 
 			isCandles := candles[:isEnd]
 			result := stg.AnalyzeWithRules(isCandles, rules, settings)
 
-			// 결정성 검증 (2회 실행 비교)
+			// 결정성 검증 (2회 실행 비교 — W9-1에서만 필수, baseline은 시간 절약 가능하나 보존)
 			result2 := stg.AnalyzeWithRules(isCandles, rules, settings)
 			if len(result.Positions) != len(result2.Positions) {
 				fmt.Printf("[baseline] %s 결정성 검증 실패: %d vs %d\n", mkt, len(result.Positions), len(result2.Positions))
@@ -608,19 +625,22 @@ func runBaselineBacktest(stratPath string, markets []string, outputPath string) 
 
 			mu.Lock()
 			allRows = append(allRows, rows...)
-			if globalFrom == "" || isFrom < globalFrom {
-				globalFrom = isFrom
+			if globalIsFrom == "" || isFrom < globalIsFrom {
+				globalIsFrom = isFrom
 			}
-			if globalTo == "" || isTo > globalTo {
-				globalTo = isTo
+			if globalIsTo == "" || isTo > globalIsTo {
+				globalIsTo = isTo
 			}
 			if globalOOSFrom == "" || (oosFrom != "" && oosFrom < globalOOSFrom) {
 				globalOOSFrom = oosFrom
 			}
+			if globalOOSTo == "" || oosTo > globalOOSTo {
+				globalOOSTo = oosTo
+			}
 			mu.Unlock()
 
-			fmt.Printf("[baseline] %s 완료: IS %s~%s, 청산완료 포지션 %d건\n",
-				mkt, isFrom, isTo, len(result.Positions))
+			fmt.Printf("[baseline] %s 완료: IS %s~%s, OOS %s~%s, 청산완료 포지션 %d건\n",
+				mkt, isFrom, isTo, oosFrom, oosTo, len(result.Positions))
 		}(market)
 	}
 	wg.Wait()
@@ -629,9 +649,10 @@ func runBaselineBacktest(stratPath string, markets []string, outputPath string) 
 		GeneratedAt: time.Now().Format(time.RFC3339),
 		Strategy:    stratPath,
 		Period: EdgePeriod{
-			From:            globalFrom,
-			To:              globalTo,
-			OOSExcludedFrom: globalOOSFrom,
+			IsFrom:  globalIsFrom,
+			IsTo:    globalIsTo,
+			OOSFrom: globalOOSFrom,
+			OOSTo:   globalOOSTo,
 		},
 		Results: allRows,
 	}
@@ -655,6 +676,14 @@ func runBaselineBacktest(stratPath string, markets []string, outputPath string) 
 func computeBaselineStats(market, strategy string, trades []box.TradePosition) BaselineStratRow {
 	row := BaselineStratRow{Market: market, Strategy: strategy}
 	var grossWin, grossLoss, cumRet, peak, maxDD float64
+
+	// by_year 집계용: year → (wins, grossWin, grossLoss, cumRet, count)
+	type yearBucket struct {
+		wins, count               int
+		grossWin, grossLoss, cumRet float64
+	}
+	yearMap := make(map[int]*yearBucket)
+
 	for _, t := range trades {
 		net := t.NetReturnRate
 		if net == 0 {
@@ -686,18 +715,67 @@ func computeBaselineStats(market, strategy string, trades []box.TradePosition) B
 			BuyPrice:     t.BuyPriceOrigin,
 			SellDate:     sellDate,
 			SellReason:   sellReason,
-			NetReturn:    net, // NetReturnRate is already in percent
+			NetReturn:    net,
 		})
+
+		// by_year 집계 — BuyDate 형식: "YYYYMMDD"
+		year := 0
+		if len(t.BuyDate) >= 4 {
+			fmt.Sscanf(t.BuyDate[:4], "%d", &year)
+		}
+		if year > 0 {
+			b, ok := yearMap[year]
+			if !ok {
+				b = &yearBucket{}
+				yearMap[year] = b
+			}
+			b.count++
+			b.cumRet += net
+			if net > 0 {
+				b.wins++
+				b.grossWin += net
+			} else {
+				b.grossLoss += -net
+			}
+		}
 	}
 	n := float64(len(trades))
 	row.TradeCount = len(trades)
 	if n > 0 {
 		row.WinRate = row.WinRate / n * 100
-		row.AvgNetReturn = cumRet / n // NetReturnRate already in percent
+		row.AvgNetReturn = cumRet / n
 	}
 	if grossLoss > 0 {
 		row.ProfitFactor = grossWin / grossLoss
 	}
-	row.MaxDrawdown = maxDD // cumRet accumulates percent values
+	row.MaxDrawdown = maxDD
+
+	// by_year 정렬 후 추가
+	years := make([]int, 0, len(yearMap))
+	for y := range yearMap {
+		years = append(years, y)
+	}
+	// 정렬 (삽입 정렬 — 연도 수 소량)
+	for i := 1; i < len(years); i++ {
+		for j := i; j > 0 && years[j] < years[j-1]; j-- {
+			years[j], years[j-1] = years[j-1], years[j]
+		}
+	}
+	for _, y := range years {
+		b := yearMap[y]
+		yr := ByYearRow{Year: y, Trades: b.count}
+		if b.count >= 5 {
+			wr := float64(b.wins) / float64(b.count) * 100
+			avg := b.cumRet / float64(b.count)
+			yr.WinRate = &wr
+			yr.AvgNetReturn = &avg
+			if b.grossLoss > 0 {
+				pf := b.grossWin / b.grossLoss
+				yr.ProfitFactor = &pf
+			}
+		}
+		row.ByYear = append(row.ByYear, yr)
+	}
+
 	return row
 }
