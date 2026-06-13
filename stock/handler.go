@@ -54,6 +54,8 @@ func Handle(args []string) {
 		handleWalkForward(args[1:])
 	case "pairtest":
 		handlePairTest(args[1:])
+	case "baseline30m":
+		handleBaseline30m(args[1:])
 	default:
 		fmt.Printf("알 수 없는 stock 명령: %s\n", args[0])
 		fmt.Println("사용법:")
