@@ -1,0 +1,10 @@
+# S06 - IsMultiDefRelaxedDamCondition 제거 (MA60 강도 분기 조건 X)
+strategies:
+  - name: "S06_NoMultiDefCond"
+    def_count_min: 2
+    when:
+      - IsCloseNearDefboxPrice
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "S06_노multidef"

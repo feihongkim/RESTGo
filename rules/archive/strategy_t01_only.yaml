@@ -1,0 +1,29 @@
+# T01_VWAPReversion 단독 — 차트 시각화용 (strategy3.yaml.w8 정의)
+settings:
+  FeeRate: 0.0005
+  SlippageRate: 0.0005
+  PerCandleCooldownBars: 4
+  ADXTrendThreshold: 20
+  RSIOversoldThreshold: 35
+  VWAPDeviationK: 1.5
+  VolumeZScoreThreshold: 2.0
+  ATRStopMultiplier: 1.5
+  ATRTargetMultiplier: 2.0
+  TargetSellWeight: 0.5
+  TrailingEMAPeriod: 21
+  TimeExitBars: 16
+
+strategies:
+  # 차트 시각화용 — W11 T01v2_VWAPReversion 정확 재현 (ETH 406 trades 발생 검증됨).
+  # 원본 W8 T01은 any_of 조건이 너무 strict + IsMaInverseArrangement 거부 필터가
+  # VWAP/RSI 과매도 시점과 의미상 배타 → 0건. 본질 같은 대안 룰로 측정.
+  - name: T01_VWAPReversion
+    evaluation: per_candle
+    when:
+      - IsVWAPDeviationBelow
+      - IsRSIOversold
+    when_not:
+      - IsADXTrending
+      - IsRSIRecoveringFromOversold
+      - IsBBReboundFromLower
+    signal: VWAP하방괴리회귀매수

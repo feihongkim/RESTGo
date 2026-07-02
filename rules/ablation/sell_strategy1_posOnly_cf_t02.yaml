@@ -1,0 +1,65 @@
+# RESTGo 매도 룰 (C# Stock1 SFunction + SellEvaluators 포팅)
+# 21개 매도 룰 + 5-Path 결정 엔진 + 부분 매도(weight) 기반
+# (PeriodExpiryPlusSellSignal은 룰이 아닌 엔진 내부 처리 — Path 3 주석 참조)
+# 평가 순서는 stg/sell_rule_engine.go의 makeSellDecision에서 정의:
+#   Path 1 Critical → Path 2 Composite → Path 3 Extension → Path 4 Expiry → Path 5 Individual(Priority 작은 순)
+
+settings:
+  max_holding_period: 20
+  auto_liquidate_on_expiry: true
+  default_sell_weight: 0.5
+  small_remaining_threshold: 0.125
+  minimum_execution_size: 0.01
+
+composite:
+  threshold_high_recovery: 1.0
+  threshold_medium_recovery: 0.6
+  threshold_low_recovery: 0.3
+  weight_strong: 1.0
+  weight_medium: 0.5
+  weight_weak: 0.25
+
+sell_rules:
+  # ===== Path 1: Critical =====
+  - name: CriticalFailure
+    path: critical
+    when: [IsCriticalFailure]
+    tracking: { count_min: 1, ratio_min: 0.02 }
+    weight: 1.0
+    category: Critical
+
+  # ===== Path 3: Extension =====
+  - name: MA5BreakdownDuringExtension
+    path: extension
+    when: [IsExtensionActive, IsMA5BreakdownDuringExtension]
+    tracking: { immediate: true }
+    weight: 1.0
+    category: Extension
+
+  # NOTE: PeriodExpiryPlusSellSignal은 룰로 정의하지 않는다.
+  # 연장 대기 중 개별(individual) 매도 신호가 발생하면 엔진(makeSellDecision Path 3 두 번째 루프)이
+  # 직접 100% 청산을 결정한다. 룰로 두면 IsExtensionActive만으로 매 캔들 발화해
+  # 연장이 1캔들 만에 무조건 청산되는 버그가 된다 (C#: TriggeredSignals.Any() 검사).
+
+  # ===== Path 4: Expiry =====
+  - name: PeriodExpiry
+    path: expiry
+    when: [IsPeriodExpired]
+    tracking: { count_min: 1, ratio_min: 0.01 }
+    weight: 1.0
+    can_extend: true
+    category: Expiry
+
+  # ===== Path 5: Individual (Priority 오름차순) =====
+  # composite_eligible은 C# SellSignalCollection.GetCompositeEligibleSignals의 7개 조건에만 부여:
+  # MainBoxBreakdown, MainBoxPersistentBreakdown, WeakFoundationFail, TrendEntryFail1/2,
+  # MA5MA20DeadCross, AdaptiveStopLoss. composite_weight는 C#처럼 SignalWeight와 동일(0.5).
+  # C# Priority 2 — EarlyWarning과 동급 (BB 폭 단위는 C# 버그를 따르지 않고 percent로 유지)
+  - name: BBUpperBreakoutProfit
+    path: individual
+    priority: 3
+    when: [IsBBUpperBreakoutProfit]
+    tracking: { count_min: 1, ratio_min: 0.01 }
+    weight: 0.5
+    category: Profit
+

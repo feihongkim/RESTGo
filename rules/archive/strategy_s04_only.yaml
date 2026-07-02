@@ -1,0 +1,12 @@
+# S04 단독 — SingleDef 최완화 (4 when + 1 when_not)
+strategies:
+  - name: "S04_only"
+    def_count: 1
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMainboxCloserThanCurrentPosition
+      - IsBoxCountBetween2
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "S04_only"

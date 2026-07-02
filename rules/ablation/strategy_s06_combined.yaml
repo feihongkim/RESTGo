@@ -1,0 +1,19 @@
+# S06 원본 + S06-B 조합 (first-match-wins으로 중복 없이)
+strategies:
+  - name: "S06_MultiDefRelaxedBuy_Option2"
+    def_count_min: 2
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMultiDefRelaxedDamCondition
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "S06_매수대기"
+
+  - name: "S06B_NoUpperWickFilter"
+    def_count_min: 2
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMultiDefRelaxedDamCondition
+      - IsPenetrationOptionValid
+    signal: "S06B_매수대기"

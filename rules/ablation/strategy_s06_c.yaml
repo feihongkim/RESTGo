@@ -1,0 +1,11 @@
+# S06-C: SingleDef로 확장 (def_count_min 2 → 1)
+strategies:
+  - name: "S06C_SingleDefExtended"
+    def_count: 1
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMultiDefRelaxedDamCondition
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "S06C_매수대기"

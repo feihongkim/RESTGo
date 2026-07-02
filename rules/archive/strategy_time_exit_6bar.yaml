@@ -1,0 +1,80 @@
+# rules/strategy_time_exit_6bar.yaml — 시간 고정 청산만 (E1/E2/E3 비활성, E4 6봉)
+# 목적: W11 9 변형의 순수 진입 엣지를 시간 고정 청산(90분)으로 측정
+settings:
+  FeeRate: 0.0005
+  SlippageRate: 0.0005
+  PerCandleCooldownBars: 4
+  ADXTrendThreshold: 20
+  RSIOversoldThreshold: 30
+  VWAPDeviationK: 1.5
+  ATRStopMultiplier: 999.0   # E1 비활성 (시간 고정 청산만)
+  ATRTargetMultiplier: 999.0  # E2 비활성 → E3도 자동 비활성
+  TimeExitBars: 6                    # 6봉 = 90분 강제 청산
+  TargetSellWeight: 0.5
+  TrailingEMAPeriod: 21
+
+strategies:
+  # === T11 패밀리: IsDonchianBreakdown 트리거 기반 7변형 ===
+
+  - name: T11A_Base
+    evaluation: per_candle
+    when: [IsDonchianBreakdown]
+    any_of: [IsRSIOversold, IsVWAPDeviationBelow]
+    when_not: [IsRSIRecoveringFromOversold, IsDonchianBreakout]
+    signal: T11A_Base
+
+  - name: T11B_StrictRSI
+    evaluation: per_candle
+    when: [IsDonchianBreakdown, IsRSIOversold]
+    when_not: [IsRSIRecoveringFromOversold, IsDonchianBreakout]
+    signal: T11B_StrictRSI
+
+  - name: T11C_StrictRSI_NoTrend
+    evaluation: per_candle
+    when: [IsDonchianBreakdown, IsRSIOversold]
+    when_not: [IsRSIRecoveringFromOversold, IsDonchianBreakout, IsADXTrending]
+    signal: T11C_StrictRSI_NoTrend
+
+  - name: T11D_EMABull
+    evaluation: per_candle
+    when: [IsDonchianBreakdown, IsEMABullArrangement]
+    any_of: [IsRSIOversold, IsVWAPDeviationBelow]
+    when_not: [IsRSIRecoveringFromOversold, IsDonchianBreakout]
+    signal: T11D_EMABull
+
+  - name: T11E_MAProper
+    evaluation: per_candle
+    when: [IsDonchianBreakdown, IsMaProperArrangement]
+    any_of: [IsRSIOversold, IsVWAPDeviationBelow]
+    when_not: [IsRSIRecoveringFromOversold, IsDonchianBreakout]
+    signal: T11E_MAProper
+
+  - name: T11F_NoBBRebound
+    evaluation: per_candle
+    when: [IsDonchianBreakdown]
+    any_of: [IsRSIOversold, IsVWAPDeviationBelow]
+    when_not: [IsRSIRecoveringFromOversold, IsDonchianBreakout, IsBBReboundFromLower]
+    signal: T11F_NoBBRebound
+
+  - name: T11G_AllFilters
+    evaluation: per_candle
+    when: [IsDonchianBreakdown, IsRSIOversold]
+    when_not: [IsRSIRecoveringFromOversold, IsDonchianBreakout, IsBBReboundFromLower, IsADXTrending]
+    signal: T11G_AllFilters
+
+  # === T12 (RSI 단독 회귀, 비교군) ===
+
+  - name: T12_RSIOnly
+    evaluation: per_candle
+    when: [IsRSIOversold]
+    any_of: [IsVWAPDeviationBelow, IsMaProperArrangement]
+    when_not: [IsRSIRecoveringFromOversold, IsBBReboundFromLower, IsADXTrending]
+    signal: T12_RSIOnly
+
+  # === T01v2 (VWAP 회귀 단순화 — W10 4중 AND 0거래 문제 해결) ===
+
+  - name: T01v2_VWAPReversion
+    evaluation: per_candle
+    when: [IsVWAPDeviationBelow, IsRSIOversold]
+    when_not: [IsADXTrending, IsRSIRecoveringFromOversold, IsBBReboundFromLower]
+    signal: T01v2_VWAPReversion

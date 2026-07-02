@@ -1,0 +1,77 @@
+# strategy_bb_hybrid.yaml — Box 구조 + Bollinger Band 복합 전략
+#
+# 기존 strategy1.yaml(Box 구조)과 strategy2.yaml(지표만) 사이의 하이브리드.
+# DefBox 돌파 게이트는 analyzer.go에서 공통 적용 → 아래 조건은 "돌파 확증" 필터.
+#
+# 핵심 아이디어: BB상단 매도(BBUpperBreakoutProfit, 승률~100%)와 연결되는 매수 진입 포착
+#   SH1: BB하단 반등 + DefBox  → 하단→상단 전체 폭 포착
+#   SH2: BB스퀴즈  + MultiDef  → 에너지 집적 후 강한 방향성 돌파
+#   SH3: BB중심선  + S01 보강  → 추세 생존 구간의 DefBox만 진입
+#
+# 사용법: RESTGO_BUY_RULES=rules/strategy_bb_hybrid.yaml ./RESTGo stock strategy_study --with-sell
+
+strategies:
+
+  # ── SH1: BB 하단 반등 + DefBox (하이브리드 최엄격) ─────────────────────────
+  # "과매도 회복 중인 DefBox 돌파" — 구조적 지지 + 통계적 과매도 이중 확증
+  # IsBBReboundFromLower: 최근 5봉 내 저가 ≤ BB하단 + 현재 %B > 0.3
+  - name: "SH1_BBReboundDefBox"
+    def_count: 1
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMainboxCloserThanCurrentPosition
+      - IsBBReboundFromLower
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "BB하단반등매수"
+
+  # ── SH2: BB 스퀴즈 돌파 + MultiDef ────────────────────────────────────────
+  # "밴드 수축 + 복수 방어선 응집 후 돌파" — 에너지 집적 구간의 방향성 이탈
+  # IsBBSqueezeBreakout: 최근 20봉 내 BBWidth<4% + 현재 %B > 0.8
+  - name: "SH2_BBSqueezeMultiDef"
+    def_count_min: 2
+    when:
+      - IsCloseNearDefboxPrice
+      - IsBBSqueezeBreakout
+      - IsMa60StrongerThanMa120By2Percent
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "BB스퀴즈매수"
+
+  # ── SH3: BB 중심선 유지 + S01 보강 ─────────────────────────────────────────
+  # 기존 S01에 "최근 3봉 연속 BB중심선(%B≥0.5) 위" 조건 추가
+  # → 하락 추세 중 DefBox 돌파(페이크 브레이크아웃) 배제
+  - name: "SH3_BBMiddleS01"
+    def_count: 1
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMainboxCloserThanCurrentPosition
+      - IsSingleBreakout
+      - IsBoxConditionValid
+      - IsBoxCountBetween2
+      - IsMainboxPriceAboveMa60OrMa120
+      - IsMainboxConditionValid
+      - IsBoxDensityValidByDistribution
+      - MainBoxPositionBasedTiming
+      - IsPenetrationOptionValid
+      - IsAboveBBMiddle
+    when_not:
+      - HasExcessiveUpperWick
+    any_of:
+      - HasLowTouchedMa20
+      - IsMa20NearMa60Complex
+    signal: "BB중심선S01매수"
+
+  # ── SH4: BB 하단 반등 + MultiDef (완화) ────────────────────────────────────
+  # SH1의 MultiDef 변형 — 복수 방어선 + BB 하단 회복
+  - name: "SH4_BBReboundMultiDef"
+    def_count_min: 2
+    when:
+      - IsCloseNearDefboxPrice
+      - IsBBReboundFromLower
+      - IsMultiDefRelaxedDamCondition
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "BB하단반등MD매수"

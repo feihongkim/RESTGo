@@ -1,0 +1,14 @@
+# rules/grid_w10b.yaml — W10-B 청산 파라미터 그리드
+# T11_DonchianRebound 단일 룰 × 4 마켓 × 48 파라미터 조합 = 192 시나리오
+base_strategy: rules/strategy3_t11only.yaml
+markets:
+  - KRW-BTC
+  - KRW-ETH
+  - KRW-XRP
+  - KRW-SOL
+days: 400000
+workers: 8
+params:
+  ATRStopMultiplier: [1.5, 2.0, 2.5, 3.0]
+  ATRTargetMultiplier: [2.0, 3.0, 4.0]
+  TimeExitBars: [16, 32, 64, 96]

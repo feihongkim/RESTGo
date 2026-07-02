@@ -1,0 +1,17 @@
+# S08 단독 — SingleDef 거리 완화 (6 when + 1 when_not + any_of 2)
+strategies:
+  - name: "S08_only"
+    def_count: 1
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMainboxDistanceTwiceOrMore
+      - IsSingleBreakout
+      - IsBoxConditionValid
+      - IsBoxCountBetween5
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    any_of:
+      - HasLowTouchedMa20
+      - IsMa20NearMa60Complex
+    signal: "S08_only"

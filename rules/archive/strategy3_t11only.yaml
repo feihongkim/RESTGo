@@ -1,0 +1,27 @@
+# rules/strategy3_t11only.yaml — W10-B 청산 그리드 전용 (T11 단일 룰)
+# ATRStopMultiplier/ATRTargetMultiplier/TimeExitBars 는 gridtest가 오버라이드
+settings:
+  FeeRate: 0.0005
+  SlippageRate: 0.0005
+  PerCandleCooldownBars: 4
+  ADXTrendThreshold: 20
+  RSIOversoldThreshold: 30
+  VWAPDeviationK: 1.5
+  ATRStopMultiplier: 2.0
+  ATRTargetMultiplier: 3.0
+  TimeExitBars: 32
+  TargetSellWeight: 0.5
+  TrailingEMAPeriod: 21
+
+strategies:
+  # T11 Donchian 회귀 — W10-B 청산 그리드 대상
+  - name: T11_DonchianRebound
+    evaluation: per_candle
+    when:
+      - IsDonchianBreakdown
+    any_of:
+      - IsRSIOversold
+      - IsVWAPDeviationBelow
+    when_not:
+      - IsRSIRecoveringFromOversold
+      - IsDonchianBreakout

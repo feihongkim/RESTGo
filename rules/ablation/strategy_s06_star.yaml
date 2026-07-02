@@ -1,0 +1,10 @@
+# S06* — 두 깎는 조건 동시 제거
+#   − IsMultiDefRelaxedDamCondition (MA60 강도 분기)
+#   − HasExcessiveUpperWick (윗꼬리 거부)
+strategies:
+  - name: "S06_star"
+    def_count_min: 2
+    when:
+      - IsCloseNearDefboxPrice
+      - IsPenetrationOptionValid
+    signal: "S06_star_매수대기"

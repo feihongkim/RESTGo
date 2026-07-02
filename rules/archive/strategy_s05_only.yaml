@@ -1,0 +1,13 @@
+# S05 단독 — MultiDef 표준 (5 when + 1 when_not)
+strategies:
+  - name: "S05_only"
+    def_count_min: 2
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMa60StrongerThanMa120By2Percent
+      - IsBoxDensityValidByDistribution
+      - MultiDefDamCountMax2
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "S05_only"

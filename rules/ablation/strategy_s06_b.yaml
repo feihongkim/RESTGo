@@ -1,0 +1,9 @@
+# S06-B: HasExcessiveUpperWick 제거 (윗꼬리 거부 제거)
+strategies:
+  - name: "S06B_NoUpperWickFilter"
+    def_count_min: 2
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMultiDefRelaxedDamCondition
+      - IsPenetrationOptionValid
+    signal: "S06B_매수대기"

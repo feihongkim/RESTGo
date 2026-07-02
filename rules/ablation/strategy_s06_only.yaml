@@ -1,0 +1,10 @@
+strategies:
+  - name: "S06_MultiDefRelaxedBuy_Option2"
+    def_count_min: 2
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMultiDefRelaxedDamCondition
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "multidef매수대기"

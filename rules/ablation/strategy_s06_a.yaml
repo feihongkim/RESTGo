@@ -1,0 +1,10 @@
+# S06-A: PenetrationOption 제거 (관통 조건 빼서 단순화)
+strategies:
+  - name: "S06A_NoPenetration"
+    def_count_min: 2
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMultiDefRelaxedDamCondition
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "S06A_매수대기"

@@ -1,0 +1,22 @@
+# S03 단독 — SingleDef 가장 엄격 (11 when + 1 when_not + any_of 2)
+strategies:
+  - name: "S03_only"
+    def_count: 1
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMainboxCloserThanCurrentPosition
+      - IsSingleBreakout
+      - IsBoxConditionValid
+      - IsBoxCountBetween2
+      - IsMainboxPriceAboveMa60OrMa120
+      - IsMainboxConditionValid
+      - IsBoxDensityValidByDistribution
+      - MainBoxPositionBasedTiming
+      - MainBoxPositionBasedTimingLess
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    any_of:
+      - HasLowTouchedMa20
+      - IsMa20NearMa60Complex
+    signal: "S03_only"

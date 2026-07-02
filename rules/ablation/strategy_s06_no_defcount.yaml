@@ -1,0 +1,10 @@
+# S06 - def_count_min 제거 (DefBox 수 제한 없이)
+strategies:
+  - name: "S06_NoDefCount"
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMultiDefRelaxedDamCondition
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "S06_노defcount"

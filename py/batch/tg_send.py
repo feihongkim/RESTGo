@@ -64,6 +64,12 @@ async def ask_message(bot_username: str, message: str, timeout: int = 300):
         else:
             print(f"[tg_send] 응답 없음 (timeout {timeout}초 초과)")
 
+async def send_files(bot_username: str, files: list, caption: str = ""):
+    async with TelegramClient(SESSION_FILE, API_ID, API_HASH) as client:
+        for f in files:
+            await client.send_file(bot_username, f, caption=caption)
+            print(f"[tg_send] 파일 전송 완료: {f}")
+
 async def auth_only(phone: str, password: str = None):
     """최초 1회 인증용"""
     import getpass
@@ -88,13 +94,21 @@ if __name__ == "__main__":
         bot_username = sys.argv[2]
         message = " ".join(sys.argv[3:])
         asyncio.run(ask_message(bot_username, message))
+    elif len(sys.argv) >= 2 and sys.argv[1] == "--files":
+        if len(sys.argv) < 4:
+            print("Usage: tg_send.py --files <bot_username> <file1> [file2 ...]")
+            sys.exit(1)
+        bot_username = sys.argv[2]
+        files = sys.argv[3:]
+        asyncio.run(send_files(bot_username, files))
     elif len(sys.argv) >= 3:
         bot_username = sys.argv[1]
         message = " ".join(sys.argv[2:])
         asyncio.run(send_message(bot_username, message))
     else:
         print("Usage:")
-        print("  tg_send.py --auth <phone_number> [2fa]     # 최초 인증")
-        print("  tg_send.py --ask <bot_username> <message>  # 전송 + 응답 수신")
-        print("  tg_send.py <bot_username> <message>        # 전송만")
+        print("  tg_send.py --auth <phone_number> [2fa]              # 최초 인증")
+        print("  tg_send.py --ask <bot_username> <message>           # 전송 + 응답 수신")
+        print("  tg_send.py --files <bot_username> <file1> [file2..] # 파일 전송")
+        print("  tg_send.py <bot_username> <message>                 # 전송만")
         sys.exit(1)

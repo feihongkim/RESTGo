@@ -1,0 +1,61 @@
+# strategy_bb_pure.yaml — John Bollinger "Bollinger on Bollinger Bands" 3대 방법 순수 구현
+#
+# DefBox 돌파 게이트는 analyzer.go에서 공통 적용 (가격 돌파 + 거래대금 + ATR).
+# 아래 조건은 볼린저 원서 3가지 방법으로 돌파의 질을 검증.
+#
+# Method III (W바텀, 가장 선택적) → Method II (Band Walk) → Method I (역사적 스퀴즈)
+# 순서대로 평가 — 앞 방법이 매칭되면 뒤 방법은 평가하지 않음.
+#
+# 사용법:
+#   ./RESTGo stock strategy_study --with-sell rules/strategy_bb_pure.yaml
+
+strategies:
+
+  # ── MIIIb: W바텀 (Box 시퀀스 기반 — 가장 엄격) ────────────────────────────
+  # 5이평 기울기 전환점 Box를 사용:
+  # 하단Box(slope-→+, BB하단이탈) → 상단Box(slope+→-) → 하단Box(slope-→+, BB하단위)
+  # Box 구조 자체가 W 형태와 P1-P2 간격을 구조적으로 보장한다.
+  - name: "MIIIb_WBottomBox"
+    def_count_min: 1
+    when:
+      - IsBBWBottomBoxPattern
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "MIIIb_W바텀Box"
+
+  # ── MIII: W바텀 반전 (Method III — %B 직접 체크) ────────────────────────────
+  # 볼린저 원서: 1차 저점(BB하단 이탈) → 중간 반등 → 2차 저점(BB하단 위, 강도 다이버전스)
+  # → DefBox 돌파가 "중심선 돌파" 역할을 하여 최종 진입 신호가 됨
+  # IsBBWBottomPattern: 과거 50봉 내 W패턴 탐지 (lookback=50)
+  - name: "MIII_WBottomReversal"
+    def_count_min: 1
+    when:
+      - IsCloseNearDefboxPrice
+      - IsBBWBottomPattern
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "MIII_W바텀"
+
+  # ── MII: Band Walk 추세 추종 (Method II) ────────────────────────────────────
+  # 볼린저 원서: 상단 밴드 부근에서 가격이 지속적으로 유지 = 강한 추세
+  # IsBBWalkingUp: 최근 5봉 중 과반(3봉 이상)이 %B ≥ 0.4 (밴드 중간 이상 지속)
+  - name: "MII_BandWalkTrend"
+    def_count_min: 1
+    when:
+      - IsCloseNearDefboxPrice
+      - IsBBWalkingUp
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "MII_밴드워크"
+
+  # ── MI: 역사적 스퀴즈 돌파 (Method I) ──────────────────────────────────────
+  # 볼린저 원서: 밴드 수축이 6개월 최저 수준에 근접했을 때 → 에너지 집적 후 방향성 이탈
+  # IsBBSqueezeHistorical: 직전 20봉 내 BBWidth ≤ 과거 120봉 최솟값 × 2.0 (ratio=2.0)
+  - name: "MI_HistoricalSqueezeBreakout"
+    def_count_min: 1
+    when:
+      - IsCloseNearDefboxPrice
+      - IsBBSqueezeHistorical
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "MI_역사적스퀴즈"

@@ -1,0 +1,10 @@
+# S06 - IsCloseNearDefboxPrice 제거 (DefBox 근접 가격 조건 X)
+strategies:
+  - name: "S06_NoCloseNear"
+    def_count_min: 2
+    when:
+      - IsMultiDefRelaxedDamCondition
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "S06_노closenear"

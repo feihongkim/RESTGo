@@ -1,0 +1,87 @@
+# rules/strategy3.yaml — jarvis 확정 설계 (2026-06-13)
+# Stage 0 결과에 따라 확증·거부 조건은 교체될 수 있다 (트리거는 유지)
+settings:
+  FeeRate: 0.0005
+  SlippageRate: 0.0005
+  PerCandleCooldownBars: 4
+  ADXTrendThreshold: 20
+  RSIOversoldThreshold: 35
+  RSIOverboughtThreshold: 70
+  VWAPDeviationK: 1.5
+  VolumeZScoreThreshold: 2.0
+  ATRStopMultiplier: 1.5
+  ATRTargetMultiplier: 2.0
+  TargetSellWeight: 0.5
+  TrailingEMAPeriod: 21
+  TimeExitBars: 16
+  EMA21PullbackLookback: 3
+
+strategies:
+  # T01 VWAP 회귀 — 회귀계 (횡보장 전용)
+  # 트리거: VWAP -1.5σ 이탈(과매도 괴리) / 확증: RSI 과매도 or 거래량 / 거부: 추세장·역배열
+  - name: T01_VWAPReversion
+    evaluation: per_candle
+    when:
+      - IsVWAPDeviationBelow
+      - IsRSIOversold
+    any_of:
+      - IsVolumeZScoreSpike
+      - IsBBLowerTouch
+    when_not:
+      - IsADXTrending
+      - IsMaInverseArrangement
+    signal: VWAP하방괴리회귀매수
+
+  # T03 EMA 풀백 — 추세계 (가장 범용)
+  # 트리거: EMA 정배열 + 21선 풀백 반등 / 확증: MACD 히스토그램 / 거부: 과매수
+  - name: T03_EMAPullback
+    evaluation: per_candle
+    when:
+      - IsEMABullArrangement
+      - IsEMA21PullbackBounce
+    any_of:
+      - IsMACDHistogramRising
+      - IsOBVRising
+    when_not:
+      - IsRSIOverbought
+      - IsBBUpperReject
+    signal: EMA풀백반등매수
+
+  # T04a 스퀴즈 돌파 — 변동성돌파계 (BB스퀴즈 + Keltner 동시돌파)
+  - name: T04a_SqueezeBreakout
+    evaluation: per_candle
+    when:
+      - IsBBSqueezeBreakout
+      - IsKeltnerBreakout
+    any_of:
+      - IsVolumeZScoreSpike
+    when_not:
+      - IsRSIOverbought
+    signal: BB스퀴즈돌파매수
+
+  # T04b NR 돌파 — 변동성돌파계 변형 (수축 후 레인지 돌파)
+  - name: T04b_NRDonchianBreakout
+    evaluation: per_candle
+    when:
+      - IsNarrowRange
+      - IsDonchianBreakout
+    any_of:
+      - IsVolumeZScoreSpike
+      - IsDIBullish
+    when_not:
+      - IsRSIOverbought
+    signal: NR돌파매수
+
+  # T05 SuperTrend 추종 — 추세계 (추세 지속성 활용)
+  - name: T05_SuperTrendFollow
+    evaluation: per_candle
+    when:
+      - IsSuperTrendBullish
+      - IsADXTrending
+    any_of:
+      - IsAboveVWAP
+      - IsOBVRising
+    when_not:
+      - IsRSIFallingFromOverbought
+      - IsVWAPDeviationBelow
+    signal: SuperTrend추종매수

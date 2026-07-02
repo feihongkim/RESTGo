@@ -1,0 +1,26 @@
+# T03_EMAPullback 단독 — 차트 시각화용
+settings:
+  FeeRate: 0.0005
+  SlippageRate: 0.0005
+  PerCandleCooldownBars: 4
+  RSIOverboughtThreshold: 70
+  ATRStopMultiplier: 1.5
+  ATRTargetMultiplier: 2.0
+  TargetSellWeight: 0.5
+  TrailingEMAPeriod: 21
+  TimeExitBars: 16
+  EMA21PullbackLookback: 3
+
+strategies:
+  - name: T03_EMAPullback
+    evaluation: per_candle
+    when:
+      - IsEMABullArrangement
+      - IsEMA21PullbackBounce
+    any_of:
+      - IsMACDHistogramRising
+      - IsOBVRising
+    when_not:
+      - IsRSIOverbought
+      - IsBBUpperReject
+    signal: EMA풀백반등매수

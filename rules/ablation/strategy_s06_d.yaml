@@ -1,0 +1,14 @@
+# S06-D: S06 원본 + ATR 게이트 제외 (settings.ATREntryFilterEnabled=false)
+settings:
+  ATREntryFilterEnabled: false
+
+strategies:
+  - name: "S06D_NoATRGate"
+    def_count_min: 2
+    when:
+      - IsCloseNearDefboxPrice
+      - IsMultiDefRelaxedDamCondition
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "S06D_매수대기"
