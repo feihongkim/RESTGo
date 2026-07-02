@@ -54,12 +54,14 @@ type Candle struct {
 	Ma20Origin  float64 `json:"Ma020"`
 	Ma60Origin  float64 `json:"Ma060"`
 	Ma120Origin float64 `json:"Ma120"`
+	Ma200Origin float64 `json:"Ma200"`
 
 	// 이동평균 (스케일)
 	Ma5   float64 `json:"-"`
 	Ma20  float64 `json:"-"`
 	Ma60  float64 `json:"-"`
 	Ma120 float64 `json:"-"`
+	Ma200 float64 `json:"-"`
 
 	// 거래량 이동평균
 	VolMa5  float64 `json:"-"`

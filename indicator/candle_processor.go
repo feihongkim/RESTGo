@@ -38,54 +38,73 @@ func PrepareCandles(candles []*box.Candle) {
 		c.Low = c.LowOrigin / maxP
 	}
 
-	// 2. 이동평균 (스케일된 종가 기준) — rolling sum O(N)
-	for _, period := range []int{5, 20, 60, 120} {
-		var rollingSum float64
-		for i := range candles {
-			rollingSum += candles[i].Close
-			if i >= period {
-				rollingSum -= candles[i-period].Close
-			}
-			if i < period-1 {
-				continue
-			}
-			ma := rollingSum / float64(period)
-			// 원본가 MA = 스케일 MA × maxP (스케일링이 상수배이므로 동일)
-			// IsVolumeBreakout(거래대금 게이트) 등 원본가 기반 계산에 필요
-			maOrigin := ma * maxP
-			switch period {
-			case 5:
-				candles[i].Ma5 = ma
-				candles[i].Ma5Origin = maOrigin
-			case 20:
-				candles[i].Ma20 = ma
-				candles[i].Ma20Origin = maOrigin
-			case 60:
-				candles[i].Ma60 = ma
-				candles[i].Ma60Origin = maOrigin
-			case 120:
-				candles[i].Ma120 = ma
-				candles[i].Ma120Origin = maOrigin
-			}
+	// 2+3. 이동평균(5/20/60/120) + MA 기울기 — 단일 패스 (rolling sum O(N))
+	// 4개 period의 rolling sum을 동시에 굴려 기존 4패스를 1패스로 통합한다.
+	// 원본가 MA = 스케일 MA × maxP (스케일링이 상수배이므로 동일).
+	//   IsVolumeBreakout(거래대금 게이트) 등 원본가 기반 계산에 필요.
+	// Gradient: ((MA[i] - MA[i-1]) / MA[i]) * 100 을 같은 패스에서 계산한다.
+	//   MA[i-1]은 직전 iteration에서 채워진 값을 사용하므로 별도 패스가 불필요하다.
+	//   C# CalculateGradientMethod 정합: 양쪽 MA가 모두 유효(≠0)일 때만 계산
+	//   (Ma[i-1] 가드가 없으면 첫 유효 MA 위치에서 Gradient가 100으로 튄다).
+	var sum5, sum20, sum60, sum120, sum200 float64
+	for i := range candles {
+		c := candles[i]
+		sum5 += c.Close
+		if i >= 5 {
+			sum5 -= candles[i-5].Close
 		}
-	}
+		sum20 += c.Close
+		if i >= 20 {
+			sum20 -= candles[i-20].Close
+		}
+		sum60 += c.Close
+		if i >= 60 {
+			sum60 -= candles[i-60].Close
+		}
+		sum120 += c.Close
+		if i >= 120 {
+			sum120 -= candles[i-120].Close
+		}
+		sum200 += c.Close
+		if i >= 200 {
+			sum200 -= candles[i-200].Close
+		}
 
-	// 3. MA 기울기: ((MA[i] - MA[i-1]) / MA[i]) * 100
-	// C# CalculateGradientMethod는 i >= indexOfMa부터 계산하므로 양쪽 MA가 모두
-	// 유효(≠0)해야 한다. Ma[i-1] 가드가 없으면 첫 유효 MA 위치(i=period-1)에서
-	// Gradient가 100으로 튀어 C#과 결과가 달라진다.
-	for i := 1; i < len(candles); i++ {
-		if candles[i].Ma5 != 0 && candles[i-1].Ma5 != 0 {
-			candles[i].Gradient = ((candles[i].Ma5 - candles[i-1].Ma5) / candles[i].Ma5) * 100.0
+		if i >= 4 {
+			c.Ma5 = sum5 / 5.0
+			c.Ma5Origin = c.Ma5 * maxP
 		}
-		if candles[i].Ma20 != 0 && candles[i-1].Ma20 != 0 {
-			candles[i].Gradient20 = ((candles[i].Ma20 - candles[i-1].Ma20) / candles[i].Ma20) * 100.0
+		if i >= 19 {
+			c.Ma20 = sum20 / 20.0
+			c.Ma20Origin = c.Ma20 * maxP
 		}
-		if candles[i].Ma60 != 0 && candles[i-1].Ma60 != 0 {
-			candles[i].Gradient60 = ((candles[i].Ma60 - candles[i-1].Ma60) / candles[i].Ma60) * 100.0
+		if i >= 59 {
+			c.Ma60 = sum60 / 60.0
+			c.Ma60Origin = c.Ma60 * maxP
 		}
-		if candles[i].Ma120 != 0 && candles[i-1].Ma120 != 0 {
-			candles[i].Gradient120 = ((candles[i].Ma120 - candles[i-1].Ma120) / candles[i].Ma120) * 100.0
+		if i >= 119 {
+			c.Ma120 = sum120 / 120.0
+			c.Ma120Origin = c.Ma120 * maxP
+		}
+		if i >= 199 {
+			c.Ma200 = sum200 / 200.0
+			c.Ma200Origin = c.Ma200 * maxP
+		}
+
+		if i >= 1 {
+			p := candles[i-1]
+			if c.Ma5 != 0 && p.Ma5 != 0 {
+				c.Gradient = ((c.Ma5 - p.Ma5) / c.Ma5) * 100.0
+			}
+			if c.Ma20 != 0 && p.Ma20 != 0 {
+				c.Gradient20 = ((c.Ma20 - p.Ma20) / c.Ma20) * 100.0
+			}
+			if c.Ma60 != 0 && p.Ma60 != 0 {
+				c.Gradient60 = ((c.Ma60 - p.Ma60) / c.Ma60) * 100.0
+			}
+			if c.Ma120 != 0 && p.Ma120 != 0 {
+				c.Gradient120 = ((c.Ma120 - p.Ma120) / c.Ma120) * 100.0
+			}
 		}
 	}
 
@@ -160,8 +179,8 @@ func PrepareCandles(candles []*box.Candle) {
 	// 13. SuperTrend (10, 3.0 — 원본가 + ATR)
 	CalculateSuperTrend(candles, 10, 3.0)
 
-	// 14. Donchian Channel (20 — 원본가)
-	CalculateDonchian(candles, 20)
+	// 14. Donchian Channel (30 — 원본가) — 2026-06-16 사용자 요청 20→40→30 절충
+	CalculateDonchian(candles, 30)
 
 	// 15. Keltner Channel (20, 1.5 — 원본가 + ATR)
 	CalculateKeltner(candles, 20, 1.5)
