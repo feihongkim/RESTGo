@@ -35,11 +35,23 @@ type SellStrategyFile struct {
 
 // SellSettingsYAML 은 YAML에서 받는 전역 설정 (DefaultSellSettings에 덮어쓴다).
 type SellSettingsYAML struct {
-	MaxHoldingPeriod        *int     `yaml:"max_holding_period"`
-	AutoLiquidateOnExpiry   *bool    `yaml:"auto_liquidate_on_expiry"`
-	DefaultSellWeight       *float64 `yaml:"default_sell_weight"`
-	SmallRemainingThreshold *float64 `yaml:"small_remaining_threshold"`
-	MinimumExecutionSize    *float64 `yaml:"minimum_execution_size"`
+	MaxHoldingPeriod        *int                  `yaml:"max_holding_period"`
+	AutoLiquidateOnExpiry   *bool                 `yaml:"auto_liquidate_on_expiry"`
+	DefaultSellWeight       *float64              `yaml:"default_sell_weight"`
+	SmallRemainingThreshold *float64              `yaml:"small_remaining_threshold"`
+	MinimumExecutionSize    *float64              `yaml:"minimum_execution_size"`
+	CriticalFailure         *CriticalFailureYAML  `yaml:"critical_failure"`
+}
+
+// CriticalFailureYAML 은 IsCriticalFailure 임계값 YAML 오버라이드.
+// 모든 필드는 포인터로 선언하여 누락 시 DefaultSellSettings 값을 유지한다.
+type CriticalFailureYAML struct {
+	DailyDropThreshold      *float64 `yaml:"daily_drop_threshold"`
+	PanicVolumeMultiplier   *float64 `yaml:"panic_volume_multiplier"`
+	PanicMinDropRate        *float64 `yaml:"panic_min_drop_rate"`
+	CumulativeDropThreshold *float64 `yaml:"cumulative_drop_threshold"`
+	CumulativeDropDays      *int     `yaml:"cumulative_drop_days"`
+	MAReversalDays          *int     `yaml:"ma_reversal_days"`
 }
 
 // CompositeYAML 은 Composite Path 임계값/가중치.
@@ -103,6 +115,28 @@ func LoadSellStrategy(path string) (SellSettings, error) {
 	}
 	if v := sf.Composite.WeightWeak; v != nil {
 		settings.CompositeWeightWeak = *v
+	}
+
+	// CriticalFailure 임계값 오버라이드
+	if cf := sf.Settings.CriticalFailure; cf != nil {
+		if v := cf.DailyDropThreshold; v != nil {
+			settings.Critical.DailyDropThreshold = *v
+		}
+		if v := cf.PanicVolumeMultiplier; v != nil {
+			settings.Critical.PanicVolumeMultiplier = *v
+		}
+		if v := cf.PanicMinDropRate; v != nil {
+			settings.Critical.PanicMinDropRate = *v
+		}
+		if v := cf.CumulativeDropThreshold; v != nil {
+			settings.Critical.CumulativeDropThreshold = *v
+		}
+		if v := cf.CumulativeDropDays; v != nil {
+			settings.Critical.CumulativeDropDays = *v
+		}
+		if v := cf.MAReversalDays; v != nil {
+			settings.Critical.MAReversalDays = *v
+		}
 	}
 
 	activeSellRules = sf.SellRules

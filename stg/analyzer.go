@@ -163,31 +163,38 @@ func analyzeInternal(candles []*box.Candle, settings Settings, rules []RuleConfi
 // buildTradePositionFromSignal 은 매수 신호로부터 TradePosition을 생성한다 (same-candle fill, on_breakout용).
 func buildTradePositionFromSignal(ctx *box.TradingContext, signal BuySignal) *box.TradePosition {
 	cur := ctx.GetCurrentCandle()
-	buyPrice, buyPriceOrigin, buyDate := 0.0, 0.0, ""
+	buyPrice, buyPriceOrigin, buyDate, buyTime := 0.0, 0.0, "", ""
 	if cur != nil {
 		buyPrice = cur.Close
 		buyPriceOrigin = cur.CloseOrigin
 		buyDate = cur.Date
+		buyTime = cur.Time
 	}
-	return buildPosition(ctx, signal, buyPrice, buyPriceOrigin, buyDate)
+	p := buildPosition(ctx, signal, buyPrice, buyPriceOrigin, buyDate)
+	p.BuyTime = buyTime
+	return p
 }
 
 // buildTradePositionFromSignalNextOpen 은 per_candle 신호 체결을 다음 봉 시가로 설정한다 (look-ahead 방지).
 func buildTradePositionFromSignalNextOpen(ctx *box.TradingContext, signal BuySignal, candles []*box.Candle) *box.TradePosition {
 	pos := ctx.Position
-	buyPrice, buyPriceOrigin, buyDate := 0.0, 0.0, ""
+	buyPrice, buyPriceOrigin, buyDate, buyTime := 0.0, 0.0, "", ""
 	if cur := ctx.GetCurrentCandle(); cur != nil {
 		buyPrice = cur.Close
 		buyPriceOrigin = cur.CloseOrigin
 		buyDate = cur.Date
+		buyTime = cur.Time
 	}
 	if pos+1 < len(candles) {
 		next := candles[pos+1]
 		buyPrice = next.Open
 		buyPriceOrigin = next.OpenOrigin
 		buyDate = next.Date
+		buyTime = next.Time
 	}
-	return buildPosition(ctx, signal, buyPrice, buyPriceOrigin, buyDate)
+	p := buildPosition(ctx, signal, buyPrice, buyPriceOrigin, buyDate)
+	p.BuyTime = buyTime
+	return p
 }
 
 func buildPosition(ctx *box.TradingContext, signal BuySignal, buyPrice, buyPriceOrigin float64, buyDate string) *box.TradePosition {

@@ -104,6 +104,7 @@ func execute15mExit(ctx *box.TradingContext, pos *box.TradePosition, reason stri
 		SellPrice:          fillPrice, // 원본가와 동일 (15m 단타는 스케일 없음)
 		SellPriceOrigin:    fillPrice,
 		SellDate:           cur.Date,
+		ExecutionTime:      cur.Time,
 		SellPosition:       ctx.Position,
 		HoldingDays:        pos.HoldingDays(ctx.Position),
 	}

@@ -306,7 +306,11 @@ func evaluateSingleRule(rule RuleConfig, ctx *box.TradingContext, s Settings) (s
 		}
 	}
 
-	return rule.Signal, rule.Name
+	signal := rule.Signal
+	if signal == "" {
+		signal = rule.Name // signal: 미지정 시 전략명으로 대체
+	}
+	return signal, rule.Name
 }
 
 // EvaluateRules 는 등록된 전략 목록에 대해 순서대로 평가하고
