@@ -1,4 +1,4 @@
-package stock
+package study
 
 import (
 	"RESTGo/box"
@@ -36,57 +36,58 @@ type PairTradeRow struct {
 
 // PairResult 는 페어별 종합 결과
 type PairResult struct {
-	PairName       string         `json:"pair"`
-	MarketA        string         `json:"market_a"`
-	MarketB        string         `json:"market_b"`
-	PairedBars     int            `json:"paired_bars"`
-	Correlation    float64        `json:"correlation"`
-	ADFTStat       float64        `json:"adf_t_stat"`
-	IsStationary   bool           `json:"is_stationary"` // ADFTStat < -2.86
-	TradeCount     int            `json:"trade_count"`
-	WinRate        float64        `json:"win_rate"`
-	AvgNetReturn   float64        `json:"avg_net_return_pct"`
-	ProfitFactor   float64        `json:"profit_factor"`
-	MaxDrawdown    float64        `json:"max_drawdown_pct"`
-	ISFrom         string         `json:"is_from"`
-	ISTo           string         `json:"is_to"`
-	OOSFrom        string         `json:"oos_from"`
-	OOSTo          string         `json:"oos_to"`
-	BuyACount      int            `json:"buy_a_count"`
-	BuyBCount      int            `json:"buy_b_count"`
-	Trades         []PairTradeRow `json:"trades"`
+	PairName     string         `json:"pair"`
+	MarketA      string         `json:"market_a"`
+	MarketB      string         `json:"market_b"`
+	PairedBars   int            `json:"paired_bars"`
+	Correlation  float64        `json:"correlation"`
+	ADFTStat     float64        `json:"adf_t_stat"`
+	IsStationary bool           `json:"is_stationary"` // ADFTStat < -2.86
+	TradeCount   int            `json:"trade_count"`
+	WinRate      float64        `json:"win_rate"`
+	AvgNetReturn float64        `json:"avg_net_return_pct"`
+	ProfitFactor float64        `json:"profit_factor"`
+	MaxDrawdown  float64        `json:"max_drawdown_pct"`
+	ISFrom       string         `json:"is_from"`
+	ISTo         string         `json:"is_to"`
+	OOSFrom      string         `json:"oos_from"`
+	OOSTo        string         `json:"oos_to"`
+	BuyACount    int            `json:"buy_a_count"`
+	BuyBCount    int            `json:"buy_b_count"`
+	Trades       []PairTradeRow `json:"trades"`
 }
 
 // PairBaselineOutput 는 페어 베이스라인 전체 출력
 type PairBaselineOutput struct {
-	GeneratedAt string       `json:"generated_at"`
-	ZWindow     int          `json:"z_window"`
-	EntryK      float64      `json:"entry_k"`
-	ExitZ       float64      `json:"exit_z"`
-	StopZ       float64      `json:"stop_z"`
-	TimeExit    int          `json:"time_exit_bars"`
-	FeeRate     float64      `json:"fee_rate"`
-	SlippageRate float64     `json:"slippage_rate"`
-	Pairs       []PairResult `json:"pairs"`
+	GeneratedAt  string       `json:"generated_at"`
+	ZWindow      int          `json:"z_window"`
+	EntryK       float64      `json:"entry_k"`
+	ExitZ        float64      `json:"exit_z"`
+	StopZ        float64      `json:"stop_z"`
+	TimeExit     int          `json:"time_exit_bars"`
+	FeeRate      float64      `json:"fee_rate"`
+	SlippageRate float64      `json:"slippage_rate"`
+	Pairs        []PairResult `json:"pairs"`
 }
 
 // 페어 트레이딩 기본 파라미터
 const (
-	pairZWindow      = 480     // 5일 롤링 (96×5)
-	pairEntryK       = 2.0     // 진입 |z| ≥ 2
-	pairExitZ        = 0.5     // 청산 |z| ≤ 0.5
-	pairStopZ        = 4.0     // 손절 |z| ≥ 4
-	pairTimeExitBars = 192     // 2일 (96×2)
+	pairZWindow      = 480 // 5일 롤링 (96×5)
+	pairEntryK       = 2.0 // 진입 |z| ≥ 2
+	pairExitZ        = 0.5 // 청산 |z| ≤ 0.5
+	pairStopZ        = 4.0 // 손절 |z| ≥ 4
+	pairTimeExitBars = 192 // 2일 (96×2)
 	pairFeeRate      = 0.0005
 	pairSlipRate     = 0.0005
 )
 
-// handlePairTest 는 "stock pairtest" 명령 진입점
+// HandlePairTest 는 "stock pairtest" 명령 진입점
 //
 // 사용법:
-//   ./RESTGo stock pairtest <output_json>            — 4 마켓 6 페어 모두
-//   ./RESTGo stock pairtest <output_json> <A> <B>    — 단일 페어
-func handlePairTest(args []string) {
+//
+//	./RESTGo stock pairtest <output_json>            — 4 마켓 6 페어 모두
+//	./RESTGo stock pairtest <output_json> <A> <B>    — 단일 페어
+func HandlePairTest(args []string) {
 	outputPath := "zpicture/pair_baseline.json"
 	if len(args) >= 1 && args[0] != "" {
 		outputPath = args[0]
@@ -322,4 +323,3 @@ func condText(cond bool, ifTrue, ifFalse string) string {
 	}
 	return ifFalse
 }
-

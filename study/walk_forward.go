@@ -1,4 +1,4 @@
-package stock
+package study
 
 import (
 	"RESTGo/box"
@@ -23,21 +23,21 @@ const (
 
 // WFWindow 는 하나의 IS+OOS 윈도우 결과
 type WFWindow struct {
-	Index     int     `json:"index"`
-	ISFrom    string  `json:"is_from"`
-	ISTo      string  `json:"is_to"`
-	OOSFrom   string  `json:"oos_from"`
-	OOSTo     string  `json:"oos_to"`
-	ISTrades  int     `json:"is_trades"`
-	ISWinRate float64 `json:"is_win_rate"`
-	ISAvgNet  float64 `json:"is_avg_net_return_pct"`
-	ISPF      float64 `json:"is_profit_factor"`
-	ISMDD     float64 `json:"is_max_drawdown_pct"`
-	OOSTrades int     `json:"oos_trades"`
+	Index      int     `json:"index"`
+	ISFrom     string  `json:"is_from"`
+	ISTo       string  `json:"is_to"`
+	OOSFrom    string  `json:"oos_from"`
+	OOSTo      string  `json:"oos_to"`
+	ISTrades   int     `json:"is_trades"`
+	ISWinRate  float64 `json:"is_win_rate"`
+	ISAvgNet   float64 `json:"is_avg_net_return_pct"`
+	ISPF       float64 `json:"is_profit_factor"`
+	ISMDD      float64 `json:"is_max_drawdown_pct"`
+	OOSTrades  int     `json:"oos_trades"`
 	OOSWinRate float64 `json:"oos_win_rate"`
-	OOSAvgNet float64 `json:"oos_avg_net_return_pct"`
-	OOSPF     float64 `json:"oos_profit_factor"`
-	OOSMDD    float64 `json:"oos_max_drawdown_pct"`
+	OOSAvgNet  float64 `json:"oos_avg_net_return_pct"`
+	OOSPF      float64 `json:"oos_profit_factor"`
+	OOSMDD     float64 `json:"oos_max_drawdown_pct"`
 	// 성과비: OOS / IS (avgNet, PF). 분모 0/음수면 nil
 	RatioAvgNet *float64 `json:"ratio_avg_net"`
 	RatioPF     *float64 `json:"ratio_pf"`
@@ -61,11 +61,11 @@ type WFOutput struct {
 	WindowsPassed     int     `json:"windows_passed_oos_gate"` // OOS PF ≥ 1.3 ∧ avgNet ≥ 0.30
 }
 
-// handleWalkForward 는 "stock walkforward" 명령 진입점
+// HandleWalkForward 는 "stock walkforward" 명령 진입점
 //
 // 사용법: ./RESTGo stock walkforward <market> [output_json] [strategy_yaml]
 // 예) ./RESTGo stock walkforward KRW-ETH zpicture/wf_eth_t11d.json rules/strategy3.yaml
-func handleWalkForward(args []string) {
+func HandleWalkForward(args []string) {
 	if len(args) == 0 {
 		fmt.Println("사용법: ./RESTGo stock walkforward <market> [output_json] [strategy_yaml]")
 		return
@@ -181,10 +181,10 @@ func runWalkForward(market, stratPath, outputPath string) {
 		OOSBars:           wfOOSBars,
 		StrideBars:        wfStrideBars,
 		Windows:           windows,
-		MedianRatioPF:     medianOf(pfRatios),
-		MeanRatioPF:       meanOf(pfRatios),
-		MedianRatioAvgNet: medianOf(avgRatios),
-		MeanRatioAvgNet:   meanOf(avgRatios),
+		MedianRatioPF:     medianFloats(pfRatios),
+		MeanRatioPF:       meanFloats(pfRatios),
+		MedianRatioAvgNet: medianFloats(avgRatios),
+		MeanRatioAvgNet:   meanFloats(avgRatios),
 		WindowsPassed:     passCount,
 	}
 
@@ -264,24 +264,4 @@ func computeWFStats(positions []*box.TradePosition) wfStats {
 	}
 	st.MDD = maxDD * 100
 	return st
-}
-
-// medianOf 는 슬라이스의 중앙값을 반환한다 (정렬 부수효과).
-func medianOf(xs []float64) float64 {
-	if len(xs) == 0 {
-		return 0
-	}
-	// 삽입 정렬 — 윈도우 수 소량
-	cp := make([]float64, len(xs))
-	copy(cp, xs)
-	for i := 1; i < len(cp); i++ {
-		for j := i; j > 0 && cp[j] < cp[j-1]; j-- {
-			cp[j], cp[j-1] = cp[j-1], cp[j]
-		}
-	}
-	n := len(cp)
-	if n%2 == 1 {
-		return cp[n/2]
-	}
-	return (cp[n/2-1] + cp[n/2]) / 2
 }

@@ -1,4 +1,4 @@
-package stock
+package study
 
 import (
 	"RESTGo/box"
@@ -18,11 +18,11 @@ import (
 
 // GridConfig 는 그리드 테스트 정의 파일 구조
 type GridConfig struct {
-	BaseStrategy string                     `yaml:"base_strategy"` // 베이스 YAML 경로
-	Markets      []string                   `yaml:"markets"`       // 대상 마켓 목록 (예: ["KRW-BTC","KRW-ETH"])
-	Days         int                        `yaml:"days"`          // 조회 봉 수
-	Params       map[string][]interface{}   `yaml:"params"`        // 파라미터 그리드
-	Workers      int                        `yaml:"workers"`       // 병렬 워커 수 (기본 4)
+	BaseStrategy string                   `yaml:"base_strategy"` // 베이스 YAML 경로
+	Markets      []string                 `yaml:"markets"`       // 대상 마켓 목록 (예: ["KRW-BTC","KRW-ETH"])
+	Days         int                      `yaml:"days"`          // 조회 봉 수
+	Params       map[string][]interface{} `yaml:"params"`        // 파라미터 그리드
+	Workers      int                      `yaml:"workers"`       // 병렬 워커 수 (기본 4)
 }
 
 // GridResult 는 파라미터 조합별 백테스트 결과
@@ -42,10 +42,10 @@ type GridResult struct {
 
 // GridRunOutput 는 그리드 전체 출력 JSON
 type GridRunOutput struct {
-	GeneratedAt string       `json:"generated_at"`
-	BaseStrategy string      `json:"base_strategy"`
-	Days        int          `json:"days"`
-	Results     []GridResult `json:"results"`
+	GeneratedAt  string       `json:"generated_at"`
+	BaseStrategy string       `json:"base_strategy"`
+	Days         int          `json:"days"`
+	Results      []GridResult `json:"results"`
 }
 
 // HandleGrid 는 "stock gridtest" 명령 진입점
@@ -120,8 +120,8 @@ func HandleGrid(args []string) {
 
 	// 그리드 조합 × 마켓 조합 백테스트
 	type workItem struct {
-		combo  map[string]interface{}
-		mc     marketCandles
+		combo map[string]interface{}
+		mc    marketCandles
 	}
 	var items []workItem
 	for _, combo := range combinations {
@@ -137,7 +137,6 @@ func HandleGrid(args []string) {
 		wg      sync.WaitGroup
 		done    int32
 	)
-
 
 	total := int32(len(items))
 	startTime := time.Now()
@@ -185,6 +184,11 @@ func HandleGrid(args []string) {
 
 	// 결정성 검증: 동일 입력 2회 실행 후 일치 확인
 	verifyGridDeterminism(cfg.BaseStrategy, combinations[0], allCandles[0].market, allCandles[0].candles)
+}
+
+// HandleGridTest 는 stock 패키지 Handle에서 호출되는 진입점
+func HandleGridTest(args []string) {
+	HandleGrid(args)
 }
 
 // runGridItem 은 단일 파라미터 조합 + 마켓에 대해 백테스트를 실행한다.
@@ -348,14 +352,9 @@ func verifyGridDeterminism(basePath string, combo map[string]interface{}, market
 	if r1.TotalTrades == r2.TotalTrades && r1.TotalReturn == r2.TotalReturn {
 		fmt.Printf("[grid] 결정성 검증 통과 (거래 수: %d, 수익: %.4f)\n", r1.TotalTrades, r1.TotalReturn)
 	} else {
-		fmt.Printf("[grid] ⚠ 결정성 검증 실패: 1차(%d거래, %.4f) ≠ 2차(%d거래, %.4f)\n",
+		fmt.Printf("[grid] 결정성 검증 실패: 1차(%d거래, %.4f) != 2차(%d거래, %.4f)\n",
 			r1.TotalTrades, r1.TotalReturn, r2.TotalTrades, r2.TotalReturn)
 	}
-}
-
-// handleGridTest 는 stock 패키지 Handle에서 호출되는 진입점
-func handleGridTest(args []string) {
-	HandleGrid(args)
 }
 
 // gridDays 는 그리드 YAML의 days 파라미터 파싱 헬퍼

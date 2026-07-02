@@ -1,4 +1,4 @@
-package stock
+package study
 
 import (
 	"RESTGo/box"
@@ -69,10 +69,10 @@ func parseMinute(t string) int {
 	return m
 }
 
-// handleBaseline30m 는 "stock baseline30m" 명령 진입점.
+// HandleBaseline30m 는 "stock baseline30m" 명령 진입점.
 //
 // 사용법: ./RESTGo stock baseline30m [markets_csv] [output_json] [strategy_yaml]
-func handleBaseline30m(args []string) {
+func HandleBaseline30m(args []string) {
 	stratPath := "rules/strategy3_stage1.yaml" // W11 9 전략 기본
 	markets := []string{"KRW-BTC", "KRW-ETH", "KRW-XRP", "KRW-SOL"}
 	outputPath := "zpicture/baseline_30m.json"

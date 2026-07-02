@@ -1,4 +1,4 @@
-package stock
+package study
 
 import (
 	"RESTGo/box"
@@ -117,8 +117,8 @@ const cooldownBars = 4
 
 // ── 메인 로직 ─────────────────────────────────────────────────────────────
 
-// handleEdgeTest 는 "stock edgetest" 명령 진입점
-func handleEdgeTest(args []string) {
+// HandleEdgeTest 는 "stock edgetest" 명령 진입점
+func HandleEdgeTest(args []string) {
 	markets := []string{"KRW-BTC", "KRW-ETH", "KRW-XRP", "KRW-SOL"}
 	outputPath := "zpicture/stage0_edge.json"
 	if len(args) >= 1 && args[0] != "" {
@@ -282,7 +282,7 @@ func analyzeMarketEdge(market string, candles []*box.Candle, s stg.Settings) ([]
 	var baselines []BaselineRow
 	for _, h := range edgeHorizons {
 		hs := baseMap[h]
-		mean := meanOf(hs.returns)
+		mean := meanFloats(hs.returns)
 		baselines = append(baselines, BaselineRow{
 			Market:        market,
 			Horizon:       h,
@@ -369,7 +369,7 @@ func analyzeMarketEdge(market string, candles []*box.Candle, s stg.Settings) ([]
 			wins := 0
 			sessionSum := make(map[string]float64)
 			sessionCount := make(map[string]int)
-			baselineMean := meanOf(baseReturns[h])
+			baselineMean := meanFloats(baseReturns[h])
 
 			for i, s := range samples {
 				condReturns[i] = s.ret
@@ -380,9 +380,9 @@ func analyzeMarketEdge(market string, candles []*box.Candle, s stg.Settings) ([]
 				sessionCount[s.session]++
 			}
 
-			condMean := meanOf(condReturns)
+			condMean := meanFloats(condReturns)
 			edge := condMean - baselineMean
-			tStat := welchTStat(condReturns, baseReturns[h])
+			tStat := edgeWelchTStat(condReturns, baseReturns[h])
 			winRate := float64(wins) / float64(len(samples))
 
 			edgeBySession := make(map[string]float64)
@@ -410,42 +410,14 @@ func analyzeMarketEdge(market string, candles []*box.Candle, s stg.Settings) ([]
 	return baselines, results
 }
 
-// ── 통계 헬퍼 ─────────────────────────────────────────────────────────────
-
-func meanOf(xs []float64) float64 {
-	if len(xs) == 0 {
-		return 0
-	}
-	sum := 0.0
-	for _, x := range xs {
-		sum += x
-	}
-	return sum / float64(len(xs))
-}
-
-func varianceOf(xs []float64) float64 {
-	if len(xs) < 2 {
-		return 0
-	}
-	m := meanOf(xs)
-	sum := 0.0
-	for _, x := range xs {
-		d := x - m
-		sum += d * d
-	}
-	return sum / float64(len(xs)-1)
-}
-
-// welchTStat 는 두 독립 표본의 Welch t 통계량을 계산한다.
-// n1, n2 = 샘플 수; m1, m2 = 평균; v1, v2 = 표본 분산
-// t = (m1 - m2) / sqrt(v1/n1 + v2/n2)
-func welchTStat(group1, group2 []float64) float64 {
+// edgeWelchTStat は edge.go 내부 전용 Welch t-통계량 (meanFloats 사용)
+func edgeWelchTStat(group1, group2 []float64) float64 {
 	n1, n2 := float64(len(group1)), float64(len(group2))
 	if n1 < 2 || n2 < 2 {
 		return 0
 	}
-	m1, m2 := meanOf(group1), meanOf(group2)
-	v1, v2 := varianceOf(group1), varianceOf(group2)
+	m1, m2 := meanFloats(group1), meanFloats(group2)
+	v1, v2 := varianceFloats(group1), varianceFloats(group2)
 	se := math.Sqrt(v1/n1 + v2/n2)
 	if se == 0 {
 		return 0
@@ -492,13 +464,15 @@ func dirOf(path string) string {
 
 // BaselineTradeRow 는 거래 1건 상세
 type BaselineTradeRow struct {
-	Market        string  `json:"market"`
-	StrategyName  string  `json:"strategy_name"`
-	BuyDate       string  `json:"buy_date"`
-	BuyPrice      float64 `json:"buy_price"`
-	SellDate      string  `json:"sell_date"`
-	SellReason    string  `json:"sell_reason"`
-	NetReturn     float64 `json:"net_return_pct"`
+	Market       string  `json:"market"`
+	StrategyName string  `json:"strategy_name"`
+	BuyDate      string  `json:"buy_date"`
+	BuyTime      string  `json:"buy_time"`
+	BuyPrice     float64 `json:"buy_price"`
+	SellDate     string  `json:"sell_date"`
+	SellTime     string  `json:"sell_time"`
+	SellReason   string  `json:"sell_reason"`
+	NetReturn    float64 `json:"net_return_pct"`
 }
 
 // ByYearRow 는 연도별 분해 통계 (5거래 미만이면 평가 지표 null)
@@ -525,14 +499,14 @@ type BaselineStratRow struct {
 
 // BaselineOutput 은 베이스라인 백테스트 전체 출력 JSON
 type BaselineOutput struct {
-	GeneratedAt  string             `json:"generated_at"`
-	Strategy     string             `json:"strategy"`
-	Period       EdgePeriod         `json:"period"`
-	Results      []BaselineStratRow `json:"results"`
+	GeneratedAt string             `json:"generated_at"`
+	Strategy    string             `json:"strategy"`
+	Period      EdgePeriod         `json:"period"`
+	Results     []BaselineStratRow `json:"results"`
 }
 
-// handleBaselineBacktest 는 "stock baseline" 명령 진입점
-func handleBaselineBacktest(args []string) {
+// HandleBaselineBacktest 는 "stock baseline" 명령 진입점
+func HandleBaselineBacktest(args []string) {
 	stratPath := "rules/strategy3.yaml"
 	markets := []string{"KRW-BTC", "KRW-ETH", "KRW-XRP", "KRW-SOL"}
 	outputPath := "zpicture/baseline_t_rules.json"
@@ -675,11 +649,13 @@ func runBaselineBacktest(stratPath string, markets []string, outputPath string) 
 
 func computeBaselineStats(market, strategy string, trades []box.TradePosition) BaselineStratRow {
 	row := BaselineStratRow{Market: market, Strategy: strategy}
-	var grossWin, grossLoss, cumRet, peak, maxDD float64
+	var grossWin, grossLoss, cumRet float64
+	// 복리 자본곡선 기반 MDD: (peak - equity) / peak — 0~100% 범위 보장
+	equity, equityPeak, maxDD := 1.0, 1.0, 0.0
 
 	// by_year 집계용: year → (wins, grossWin, grossLoss, cumRet, count)
 	type yearBucket struct {
-		wins, count               int
+		wins, count                 int
 		grossWin, grossLoss, cumRet float64
 	}
 	yearMap := make(map[int]*yearBucket)
@@ -696,24 +672,33 @@ func computeBaselineStats(market, strategy string, trades []box.TradePosition) B
 		} else {
 			grossLoss += -net
 		}
-		if cumRet > peak {
-			peak = cumRet
+		equity *= (1.0 + net/100.0)
+		if equity <= 0 {
+			equity = 0
+			maxDD = 1.0
+		} else {
+			if equity > equityPeak {
+				equityPeak = equity
+			}
+			if dd := (equityPeak - equity) / equityPeak; dd > maxDD {
+				maxDD = dd
+			}
 		}
-		if dd := peak - cumRet; dd > maxDD {
-			maxDD = dd
-		}
-		var sellDate, sellReason string
+		var sellDate, sellTime, sellReason string
 		if len(t.SellExecutions) > 0 {
 			last := t.SellExecutions[len(t.SellExecutions)-1]
 			sellDate = last.SellDate
+			sellTime = last.ExecutionTime
 			sellReason = last.SellReason
 		}
 		row.Trades = append(row.Trades, BaselineTradeRow{
 			Market:       market,
 			StrategyName: strategy,
 			BuyDate:      t.BuyDate,
+			BuyTime:      t.BuyTime,
 			BuyPrice:     t.BuyPriceOrigin,
 			SellDate:     sellDate,
+			SellTime:     sellTime,
 			SellReason:   sellReason,
 			NetReturn:    net,
 		})
@@ -748,7 +733,7 @@ func computeBaselineStats(market, strategy string, trades []box.TradePosition) B
 	if grossLoss > 0 {
 		row.ProfitFactor = grossWin / grossLoss
 	}
-	row.MaxDrawdown = maxDD
+	row.MaxDrawdown = maxDD * 100
 
 	// by_year 정렬 후 추가
 	years := make([]int, 0, len(yearMap))

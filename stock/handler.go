@@ -5,6 +5,7 @@ import (
 	"RESTGo/console"
 	"RESTGo/indicator"
 	"RESTGo/stg"
+	"RESTGo/study"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -29,6 +30,15 @@ func buyRulesPath() string {
 	return strategyPath
 }
 
+// sellRulesPath 는 매도 전략 YAML 경로를 반환한다.
+// RESTGO_SELL_RULES 환경변수로 대안 전략 파일(예: rules/sell_strategy1_posOnly_mh25.yaml)을 지정할 수 있다.
+func sellRulesPath() string {
+	if p := os.Getenv("RESTGO_SELL_RULES"); p != "" {
+		return p
+	}
+	return sellStrategyPath
+}
+
 func Handle(args []string) {
 	if len(args) == 0 {
 		fmt.Println("사용법:")
@@ -40,22 +50,34 @@ func Handle(args []string) {
 	}
 
 	switch args[0] {
-	case "analyze":
+	case "analyze": // 단일 종목 Box/매수/매도 분석 → 신호·포지션 콘솔 출력
 		handleAnalyze(args[1:])
-	case "batch":
+	case "batch": // 전 종목 배치 분석 → zpicture/batch_signals.json 저장
 		handleBatch(args[1:])
-	case "gridtest":
-		handleGridTest(args[1:])
-	case "edgetest":
-		handleEdgeTest(args[1:])
-	case "baseline":
-		handleBaselineBacktest(args[1:])
-	case "walkforward":
-		handleWalkForward(args[1:])
-	case "pairtest":
-		handlePairTest(args[1:])
-	case "baseline30m":
-		handleBaseline30m(args[1:])
+	case "gridtest": // 전략 파라미터 그리드 서치 백테스트
+		study.HandleGridTest(args[1:])
+	case "edgetest": // 돌파 엣지(우위) 검증 백테스트
+		study.HandleEdgeTest(args[1:])
+	case "baseline": // 베이스라인 전략 백테스트
+		study.HandleBaselineBacktest(args[1:])
+	case "walkforward": // 워크포워드(시계열 분할) 검증
+		study.HandleWalkForward(args[1:])
+	case "pairtest": // 페어 트레이딩 검증
+		study.HandlePairTest(args[1:])
+	case "baseline30m": // 30분봉 타임프레임 베이스라인 백테스트
+		study.HandleBaseline30m(args[1:])
+	case "breakdown_study": // 돌파/이탈/회복 이벤트 사후 분석
+		study.HandleBreakdownStudy(args[1:])
+	case "strategy_study": // YAML 전략의 매수/매도 이벤트 스터디
+		study.HandleStrategyEventStudy(args[1:])
+	case "wbottom_scan": // 전 종목에서 W바텀(캔들 %B) 패턴 예시 수집
+		study.HandleWBottomScan(args[1:])
+	case "miiib_scan": // 전 종목에서 MIIIb_WBottomBox(Box W바텀) 신호 예시 수집
+		study.HandleMIIIbScan(args[1:])
+	case "wdefbox_scan": // W패턴+DefBox 결합 신호 스캔
+		study.HandleWDefBoxScan(args[1:])
+	case "combined_scan": // WD+S1 합성 전략 신호 스캔
+		study.HandleCombinedScan(args[1:])
 	default:
 		fmt.Printf("알 수 없는 stock 명령: %s\n", args[0])
 		fmt.Println("사용법:")
@@ -111,7 +133,7 @@ func handleAnalyze(args []string) {
 
 	fmt.Printf("[%s] Box/매수/매도 분석 중...\n", console.GenerateTimestampedString())
 	_ = stg.LoadStrategy(buyRulesPath())
-	if err := stg.LoadSellStrategyFile(sellStrategyPath); err != nil {
+	if err := stg.LoadSellStrategyFile(sellRulesPath()); err != nil {
 		fmt.Printf("[warn] 매도 룰 로드 실패 — 매도 평가 비활성: %v\n", err)
 	}
 	result := stg.Analyze(candles, stg.GetActiveSettings())
@@ -195,7 +217,7 @@ func handleBatch(args []string) {
 	}
 
 	_ = stg.LoadStrategy(buyRulesPath())
-	if err := stg.LoadSellStrategyFile(sellStrategyPath); err != nil {
+	if err := stg.LoadSellStrategyFile(sellRulesPath()); err != nil {
 		fmt.Printf("[warn] 매도 룰 로드 실패 — 매도 평가 비활성: %v\n", err)
 	}
 
