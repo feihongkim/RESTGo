@@ -136,6 +136,21 @@ func init() {
 	RegisterCondition("IsAboveBBMiddle", func(ctx *box.TradingContext, s Settings) bool {
 		return cond.IsAboveBBMiddle(ctx, s.BBMiddleHoldDuration)
 	})
+	// Method I 고도화: 역사적 스퀴즈 비교 (%B 임계 없음 — DefBox 돌파가 방향 확인)
+	RegisterCondition("IsBBSqueezeHistorical", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsBBSqueezeHistorical(ctx, s.BBSqueezeHistoricalLookback, s.BBSqueezeHistoricalRatio)
+	})
+	// Method II: Band Walk (상단 밴드 부근 과반 유지)
+	RegisterCondition("IsBBWalkingUp", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsBBWalkingUp(ctx, s.BBWalkDuration, s.BBWalkPercentB)
+	})
+	// Method III: W바텀 반등
+	RegisterCondition("IsBBWBottomPattern", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsBBWBottomPattern(ctx, s.BBWBottomLookback)
+	})
+	RegisterCondition("IsBBWBottomBoxPattern", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsBBWBottomBoxPattern(ctx, s.BBWBottomLookback)
+	})
 
 	// ── 이동평균(MA) 조건 ─────────────────────────────────────
 	RegisterCondition("IsMaGoldenCross5x20", func(ctx *box.TradingContext, s Settings) bool {

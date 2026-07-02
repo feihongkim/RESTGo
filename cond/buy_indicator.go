@@ -160,6 +160,247 @@ func IsAboveBBMiddle(ctx *box.TradingContext, minDuration int) bool {
 	return true
 }
 
+// IsBBSqueezeHistorical 은 볼린저 "Method I" 정통 버전:
+// 직전 squeezeLookback(20봉) 구간에 "역사적 스퀴즈"(BBWidth ≤ 과거 historicalLookback 최솟값 × maxRatio)가
+// 존재했는지 확인. DefBox 돌파 자체가 방향을 확인하므로 %B 임계는 별도로 요구하지 않는다.
+func IsBBSqueezeHistorical(ctx *box.TradingContext, historicalLookback int, maxRatio float64) bool {
+	pos := ctx.Position
+	cur := ctx.CandleList[pos]
+	if !hasValidBollinger(cur) {
+		return false
+	}
+	histStart := pos - historicalLookback
+	if histStart < 0 {
+		histStart = 0
+	}
+	minWidth := math.MaxFloat64
+	for i := histStart; i < pos; i++ {
+		c := ctx.CandleList[i]
+		if hasValidBollinger(c) && c.BollingerWidth < minWidth {
+			minWidth = c.BollingerWidth
+		}
+	}
+	if minWidth == math.MaxFloat64 || minWidth == 0 {
+		return false
+	}
+	sqStart := pos - 20
+	if sqStart < 0 {
+		sqStart = 0
+	}
+	for i := sqStart; i < pos; i++ {
+		c := ctx.CandleList[i]
+		if hasValidBollinger(c) && c.BollingerWidth <= minWidth*maxRatio {
+			return true
+		}
+	}
+	return false
+}
+
+// IsBBWalkingUp 은 볼린저 "Method II" (Band Walk):
+// 최근 minDuration 봉 중 과반 이상이 %B >= minPercentB 를 유지 — 상단 밴드 근처 지속성 확인.
+// DefBox 돌파와 결합 시 %B는 0.6 이상(중심선~상단)이면 충분 (0.8은 과엄격).
+func IsBBWalkingUp(ctx *box.TradingContext, minDuration int, minPercentB float64) bool {
+	pos := ctx.Position
+	if pos < minDuration-1 {
+		return false
+	}
+	cur := ctx.CandleList[pos]
+	if !hasValidBollinger(cur) || cur.BBPercent < minPercentB {
+		return false
+	}
+	count := 0
+	for i := pos - minDuration + 1; i <= pos; i++ {
+		c := ctx.CandleList[i]
+		if hasValidBollinger(c) && c.BBPercent >= minPercentB {
+			count++
+		}
+	}
+	return count*2 >= minDuration // 과반 이상
+}
+
+// IsBBWBottomPattern 은 볼린저 "Method III" (W바텀 반등):
+// P1(BB하단 이탈) → 중간 반등(%B≥0.4) → P2(BB하단 위에서 형성된 2차 저점) → 현재 반등 중.
+// DefBox 돌파가 "중심선 돌파" 역할을 하므로 현재 %B 임계는 별도로 요구하지 않는다.
+// P2가 BB하단 위에서 형성된다는 사실 자체가 매도 압력 약화(강도 다이버전스)를 의미한다.
+func IsBBWBottomPattern(ctx *box.TradingContext, lookback int) bool {
+	pos := ctx.Position
+	cur := ctx.CandleList[pos]
+	if !hasValidBollinger(cur) {
+		return false
+	}
+	start := pos - lookback
+	if start < 20 {
+		start = 20
+	}
+	if start >= pos-6 {
+		return false
+	}
+
+	// P1: BB하단 이탈 저점 (가장 먼저 발견된 것)
+	p1Pos := -1
+	p1PercentB := 1.0
+	for i := start; i < pos-5; i++ {
+		c := ctx.CandleList[i]
+		if hasValidBollinger(c) && c.Low <= c.BollingerLower {
+			if c.BBPercent < p1PercentB {
+				p1Pos = i
+				p1PercentB = c.BBPercent
+			}
+		}
+	}
+	if p1Pos < 0 {
+		return false
+	}
+
+	// 중간 반등: P1 이후 %B가 0.4 이상으로 회복
+	recovPos := -1
+	for i := p1Pos + 1; i < pos-2; i++ {
+		c := ctx.CandleList[i]
+		if hasValidBollinger(c) && c.BBPercent >= 0.4 {
+			recovPos = i
+			break
+		}
+	}
+	if recovPos < 0 {
+		return false
+	}
+
+	// P2: 회복 이후 BB하단 위의 저점(%B < 0.5) — 밴드 내부에서 매도 압력 약화
+	for i := recovPos + 1; i < pos; i++ {
+		c := ctx.CandleList[i]
+		if !hasValidBollinger(c) {
+			continue
+		}
+		if c.BBPercent < 0.5 && c.Low > c.BollingerLower {
+			return true
+		}
+	}
+	return false
+}
+
+// IsBBWBottomBoxPattern 은 Box 시퀀스(5이평 기울기 전환점) 기반 W바텀 패턴을 탐지한다.
+// 하단Box(slope-→+, BB하단 이탈) → 상단Box(slope+→-) → 하단Box(slope-→+, BB하단 위)
+//
+// 탐색 방향: 가장 최근 시퀀스부터 역방향 탐색 → 패턴 완성 직후 신호 발화 보장.
+// P2(두 번째 하단Box)는 현재 위치에서 maxP2Gap 봉 이내여야 한다.
+// BB 하단 이탈 체크는 박스 위치 ±5봉 창에서 수행한다.
+// FindBBWBottomBoxPattern 은 IsBBWBottomBoxPattern 과 동일 조건으로 P1/P2 박스 위치도 반환한다.
+// found=false 이면 p1Pos, p2Pos 는 무효.
+func FindBBWBottomBoxPattern(ctx *box.TradingContext, lookback int) (p1Pos, p2Pos int, found bool) {
+	pos := ctx.Position
+	candles := ctx.CandleList
+	boxes := ctx.BoxList
+
+	if !hasValidBollinger(candles[pos]) {
+		return 0, 0, false
+	}
+	startPos := pos - lookback
+	if startPos < 20 {
+		startPos = 20
+	}
+	if startPos >= pos-6 {
+		return 0, 0, false
+	}
+
+	type slot struct {
+		bpos     int
+		btype    int
+		bbBreach bool // P1 조건: bp 직전 10봉 중 저가<=BB하단 봉이 5개 이상
+	}
+
+	var slots []slot
+	for _, b := range boxes {
+		if b.BoxPosition < startPos || b.BoxPosition >= pos {
+			continue
+		}
+		wStart := b.BoxPosition - 10
+		if wStart < 0 {
+			wStart = 0
+		}
+		count := 0
+		for i := wStart; i < b.BoxPosition; i++ {
+			c := candles[i]
+			if hasValidBollinger(c) && c.Low <= c.BollingerLower {
+				count++
+			}
+		}
+		slots = append(slots, slot{b.BoxPosition, b.BoxType, count >= 5})
+	}
+
+	const maxP2Gap = 15
+	n := len(slots)
+	if n < 3 {
+		return 0, 0, false
+	}
+	s3 := slots[n-1]
+	if s3.btype != box.BoxTypeSupport || s3.bbBreach || pos-s3.bpos > maxP2Gap {
+		return 0, 0, false
+	}
+	s2 := slots[n-2]
+	if s2.btype != box.BoxTypeResistance || s2.bpos >= s3.bpos {
+		return 0, 0, false
+	}
+	// 상단Box 종가가 MA20 아래여야 함 (여전히 약세 구간임을 확인)
+	// 상단Box 종가가 MA20 아래여야 함 (여전히 약세 구간임을 확인)
+	if c2 := candles[s2.bpos]; c2.Ma20 == 0 || c2.Close >= c2.Ma20 {
+		return 0, 0, false
+	}
+	s1 := slots[n-3]
+	if s1.btype != box.BoxTypeSupport || s1.bpos >= s2.bpos || !s1.bbBreach {
+		return 0, 0, false
+	}
+	// P1 팽창 조건: ① BBW[p1] > BBW[p1-5]  AND  ② BBW[p1] > min(BBW[p1-20:p1]) * 1.2
+	if !isBBWExpanding(candles, s1.bpos) {
+		return 0, 0, false
+	}
+	return s1.bpos, s3.bpos, true
+}
+
+// isBBWExpanding 은 pos 시점에서 볼린저 밴드폭이 팽창 중인지 확인한다.
+// 조건 ①: BBW[pos] > BBW[pos-5]  (5봉 기울기 양수)
+// 조건 ②: BBW[pos] > min(BBW[pos-20:pos]) * 1.2  (최근 20봉 최솟값 대비 20% 이상 확대)
+func isBBWExpanding(candles []*box.Candle, pos int) bool {
+	bbw := func(i int) float64 {
+		c := candles[i]
+		if c.Ma20 == 0 {
+			return 0
+		}
+		return (c.BollingerUpper - c.BollingerLower) / c.Ma20
+	}
+
+	cur := bbw(pos)
+	if cur == 0 {
+		return false
+	}
+
+	// ① 5봉 전보다 밴드폭이 넓어야
+	slopeRef := pos - 5
+	if slopeRef < 0 {
+		slopeRef = 0
+	}
+	if cur <= bbw(slopeRef) {
+		return false
+	}
+
+	// ② 최근 20봉 최솟값 대비 20% 이상 확대
+	minStart := pos - 20
+	if minStart < 0 {
+		minStart = 0
+	}
+	minBBW := cur
+	for i := minStart; i < pos; i++ {
+		if v := bbw(i); v > 0 && v < minBBW {
+			minBBW = v
+		}
+	}
+	return cur >= minBBW*1.2
+}
+
+func IsBBWBottomBoxPattern(ctx *box.TradingContext, lookback int) bool {
+	_, _, found := FindBBWBottomBoxPattern(ctx, lookback)
+	return found
+}
+
 // ============================================================================
 // 이동평균(MA) 조건 (매수 측)
 // 정렬 헬퍼(IsProperArrangement 등 *Candle 단위)는 sell_helpers.go에 있으며 여기서 재사용

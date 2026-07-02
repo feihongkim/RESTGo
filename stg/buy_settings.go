@@ -35,6 +35,14 @@ type Settings struct {
 	BBSqueezeWidthThreshold float64 // 스퀴즈 판정 BBWidth (기본 4.0%)
 	BBBreakoutPercentB      float64 // 스퀴즈 돌파 인정 %B (기본 0.8)
 	BBMiddleHoldDuration    int     // 중심선 위 유지 캔들 수 (기본 3)
+	// Method I 고도화
+	BBSqueezeHistoricalLookback int     // 역사적 스퀴즈 비교 구간 (기본 120봉 ≈ 6개월)
+	BBSqueezeHistoricalRatio    float64 // 역사적 최솟값 대비 허용 배수 (기본 1.5)
+	// Method II: Band Walk
+	BBWalkDuration  int     // 연속 상단 유지 봉 수 (기본 3)
+	BBWalkPercentB  float64 // Band Walk 판정 %B (기본 0.8)
+	// Method III: W바텀
+	BBWBottomLookback int // W바텀 탐색 구간 (기본 50)
 
 	// MA 수렴 조건
 	MaConvergenceThreshold float64 // MA5/20/60 수렴 임계값 (기본 0.03 = 3%)
@@ -71,7 +79,7 @@ type Settings struct {
 	// 변동성 임계값
 	SuperTrendPeriod     int     // SuperTrend ATR 기간 (기본 10)
 	SuperTrendMultiplier float64 // SuperTrend 승수 (기본 3.0)
-	DonchianPeriod       int     // Donchian 기간 (기본 20)
+	DonchianPeriod       int     // Donchian 기간 (기본 30 — 2026-06-16 절충, candle_processor.go에서 하드코딩 사용)
 	NarrowRangePeriod    int     // NR 판단 봉 수 (기본 7)
 }
 
@@ -100,6 +108,11 @@ func DefaultSettings() Settings {
 		BBSqueezeWidthThreshold: 4.0,
 		BBBreakoutPercentB:      0.8,
 		BBMiddleHoldDuration:    3,
+		BBSqueezeHistoricalLookback: 120,
+		BBSqueezeHistoricalRatio:    2.0,
+		BBWalkDuration:              5,
+		BBWalkPercentB:              0.4,
+		BBWBottomLookback:           50,
 
 		MaConvergenceThreshold: 0.03,
 
@@ -128,7 +141,7 @@ func DefaultSettings() Settings {
 
 		SuperTrendPeriod:     10,
 		SuperTrendMultiplier: 3.0,
-		DonchianPeriod:       20,
+		DonchianPeriod:       30,
 		NarrowRangePeriod:    7,
 	}
 }

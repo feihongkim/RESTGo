@@ -178,9 +178,13 @@ func TestIsDonchianBreakout_WarmupGuard(t *testing.T) {
 }
 
 func TestIsDonchianBreakout_Triggers(t *testing.T) {
-	closes := make([]float64, 30)
+	// Donchian period(30)보다 길게: 35봉 평탄 후 급등.
+	// CalculateDonchian은 i>=period-1(=29)부터 채우므로, 돌파를 i>=30에서
+	// 검사해야 prev(i-1)의 DonchianUpper가 유효(≠0)하다.
+	const flat = 35
+	closes := make([]float64, 50)
 	for i := range closes {
-		if i < 25 {
+		if i < flat {
 			closes[i] = 10000
 		} else {
 			closes[i] = 11000
@@ -188,7 +192,7 @@ func TestIsDonchianBreakout_Triggers(t *testing.T) {
 	}
 	candles := make15mCandles(closes)
 	triggered := false
-	for i := 25; i < len(candles); i++ {
+	for i := flat; i < len(candles); i++ {
 		ctx := newCtx15m(candles, i)
 		if IsDonchianBreakout(ctx) {
 			triggered = true

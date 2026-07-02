@@ -19,6 +19,22 @@ func IsDefBoxBreakout(ctx *box.TradingContext) bool {
 		(cur.Close >= ctx.DefboxPrice || cur.Open > ctx.DefboxPrice)
 }
 
+// IsDefBoxBreakdown 은 DefBox 하향 돌파 (IsDefBoxBreakout 거울 — 2026-06-17 신규).
+// 전일 종가가 DefBox 이상 + 당일 종가가 DefBox 미만 OR 시가가 DefBox 미만.
+// 사후 가격 분포 측정용 (이벤트 스터디). 매매 룰에 직접 사용 시 운용 환경 점검 필요.
+func IsDefBoxBreakdown(ctx *box.TradingContext) bool {
+	if ctx.Position <= 0 || ctx.DefboxPrice == 0 {
+		return false
+	}
+	cur := ctx.GetCurrentCandle()
+	prev := ctx.GetPreviousCandle(1)
+	if cur == nil || prev == nil {
+		return false
+	}
+	return prev.Close >= ctx.DefboxPrice &&
+		(cur.Close < ctx.DefboxPrice || cur.Open < ctx.DefboxPrice)
+}
+
 // IsCloseNearDefboxPrice 는 현재가가 DefBox/MainBox 가격 근처인지 확인
 func IsCloseNearDefboxPrice(ctx *box.TradingContext, threshold, mainThreshold float64) bool {
 	cur := ctx.GetCurrentCandle()
