@@ -382,10 +382,16 @@ func evaluateTriggerSignals(ctx *box.TradingContext, s Settings, rules []RuleCon
 		return nil
 	}
 	var signals []BuySignal
-	triggerFired := map[string]bool{} // 캔들 내 트리거 메모이즈
+	triggerFired := map[string]bool{}   // 캔들 내 트리거 메모이즈
+	triggerMatched := map[string]bool{} // 같은 트리거 그룹 내 첫 매칭 승리 (YAML 순서 = 우선순위)
 
 	for _, rule := range rules {
 		if rule.Trigger == "" {
+			continue
+		}
+		// 같은 트리거를 쓰는 룰 중 이번 캔들에서 이미 매칭된 것이 있으면 스킵
+		// (on_breakout 경로의 "첫 매칭 승리"와 동일 철학 — 엄격한 룰을 위에 배치)
+		if triggerMatched[rule.Trigger] {
 			continue
 		}
 
@@ -442,6 +448,7 @@ func evaluateTriggerSignals(ctx *box.TradingContext, s Settings, rules []RuleCon
 		case "cooldown":
 			ctx.LastPerCandleSignalPosition[stratName] = ctx.Position
 		}
+		triggerMatched[rule.Trigger] = true
 
 		out := buildTriggeredSignal(ctx, stratName)
 		out.Helper = "trigger:" + rule.Trigger + ":" + sig

@@ -1,15 +1,18 @@
-# strategy2.yaml — 지표(RSI/Bollinger/MA) 기반 매수 전략
+# buy_indicator.yaml (구 strategy2.yaml) — 지표(RSI/Bollinger/MA) 확증 매수 전략
 #
-# strategy1.yaml(Box 구조 기반)의 대안 전략 세트.
-# 룰은 DefBox 돌파 캔들에서만 평가되므로(stg/analyzer.go 돌파 게이트),
-# 아래 전략들은 "박스 돌파 + 지표 확증" 조합으로 동작한다.
+# [트리거 형식] 모든 룰이 trigger: DefBoxBreakout — DefBox 돌파(가격+거래대금+ATR) 순간에만
+# 지표 확증 조건을 평가한다. once_per: defbox → 같은 DefBox에서 룰당 1회 발화.
+# 구 on_breakout 방식과의 차이: 박스 아래로 되밀린 후 재돌파하면 edge가 다시 발생해
+# 아직 발화 안 한 룰은 재평가된다 (구 방식은 첫 게이트 통과 시 1회만 평가).
 #
-# 사용법: RESTGO_BUY_RULES=rules/strategy2.yaml ./RESTGo stock analyze <종목코드> 250
-# 평가 순서: 위에서부터 첫 매칭 승리 → 엄격한 전략을 위에 배치
+# 사용법: RESTGO_BUY_RULES=rules/buy_indicator.yaml ./RESTGo stock analyze <종목코드> 250
+# 평가 순서: 같은 트리거 내 첫 매칭 승리 → 엄격한 전략을 위에 배치
 
 strategies:
   # I01 — 추세 확증 (최엄격): 정배열 + 전 MA 상승 + 중심선 위 + 건전 RSI
   - name: "I01_TrendConfluenceBuy"
+    trigger: DefBoxBreakout
+    once_per: defbox
     when:
       - IsPriceAboveAllMa
       - IsMaProperArrangement
@@ -22,6 +25,8 @@ strategies:
 
   # I02 — 스퀴즈 돌파: 변동성 수축 후 상방 이탈 (에너지 응축 → 분출)
   - name: "I02_SqueezeBreakoutBuy"
+    trigger: DefBoxBreakout
+    once_per: defbox
     when:
       - IsBBSqueezeBreakout
       - IsPriceAboveAllMa
@@ -32,6 +37,8 @@ strategies:
 
   # I03 — MA 수렴 후 발산: MA5/20/60 수렴 + 가격 이탈 + RSI 상승
   - name: "I03_ConvergenceBreakoutBuy"
+    trigger: DefBoxBreakout
+    once_per: defbox
     when:
       - IsMaConvergence
       - IsPriceAboveAllMa
@@ -43,6 +50,8 @@ strategies:
 
   # I04 — 골든크로스 확증: MA5×MA20 골든크로스 + RSI 상승 + 밴드 상단부
   - name: "I04_GoldenCrossBuy"
+    trigger: DefBoxBreakout
+    once_per: defbox
     when:
       - IsMaGoldenCross5x20
       - IsRSIRising
@@ -56,6 +65,8 @@ strategies:
 
   # I05 — 과매도 반등: RSI 과매도 탈출 + BB 하단 터치 후 회복
   - name: "I05_OversoldReboundBuy"
+    trigger: DefBoxBreakout
+    once_per: defbox
     when:
       - IsRSIRecoveringFromOversold
       - IsBBReboundFromLower
@@ -65,6 +76,8 @@ strategies:
 
   # I06 — 밴드 상단 돌파 (최완화): 종가 상단 밴드 돌파 + 전 MA 상승
   - name: "I06_BandBreakoutBuy"
+    trigger: DefBoxBreakout
+    once_per: defbox
     when:
       - IsBBUpperBreakout
       - IsAllMaRising

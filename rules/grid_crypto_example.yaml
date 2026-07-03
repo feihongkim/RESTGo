@@ -3,7 +3,7 @@
 #
 # Stage 1: 조합 스크리닝 예시 (T03 전략 파라미터 스윕)
 
-# base_strategy: rules/strategy3.yaml   # 베이스 전략 (룰 + 기본 settings를 여기서 로드)
+# base_strategy: rules/buy_crypto_15m.yaml   # 베이스 전략 (룰 + 기본 settings를 여기서 로드)
 # markets: [KRW-BTC, KRW-ETH]           # 백테스트 대상 마켓 (Upbit 암호화폐)
 # days: 1000                            # 마켓당 조회할 15분봉 개수
 # workers: 8                            # 병렬 워커 고루틴 수
@@ -12,7 +12,7 @@
 #   VolumeZScoreThreshold:[1.5, 2.0, 2.5]
 #   PerCandleCooldownBars:[4, 8, 16]
 
-base_strategy: rules/strategy3.yaml
+base_strategy: rules/buy_crypto_15m.yaml
 markets:
   - KRW-BTC
   - KRW-ETH

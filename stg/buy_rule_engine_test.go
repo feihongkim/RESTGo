@@ -266,9 +266,9 @@ func TestFindLastDefBoxIndex(t *testing.T) {
 // ─────────────────────────────────────────────
 
 func TestStrategy2YAML_AllConditionsRegistered(t *testing.T) {
-	rules, err := LoadRules("../rules/strategy2.yaml")
+	rules, err := LoadRules("../rules/buy_indicator.yaml")
 	if err != nil {
-		t.Fatalf("rules/strategy2.yaml 로드 실패: %v", err)
+		t.Fatalf("rules/buy_indicator.yaml 로드 실패: %v", err)
 	}
 	if len(rules) != 6 {
 		t.Fatalf("전략 개수 = %d, want 6 (I01~I06)", len(rules))
@@ -291,9 +291,15 @@ func TestStrategy2YAML_AllConditionsRegistered(t *testing.T) {
 // TestStrategy2YAML_TrendConfluenceFires 는 추세 확증 상황(정배열·전 MA 상승·
 // 중심선 위·건전 RSI)에서 I01이 첫 매칭으로 발화하는지 실제 레지스트리로 검증
 func TestStrategy2YAML_TrendConfluenceFires(t *testing.T) {
-	rules, err := LoadRules("../rules/strategy2.yaml")
+	rules, err := LoadRules("../rules/buy_indicator.yaml")
 	if err != nil {
-		t.Fatalf("rules/strategy2.yaml 로드 실패: %v", err)
+		t.Fatalf("rules/buy_indicator.yaml 로드 실패: %v", err)
+	}
+	// buy_indicator.yaml은 트리거 형식(trigger: DefBoxBreakout)이라 EvaluateRules가 스킵한다.
+	// 이 테스트의 목적은 조건 조합 검증이므로 트리거를 비우고 on_breakout 경로로 평가한다.
+	// (트리거 경로 자체는 trigger_registry_test.go에서 검증)
+	for i := range rules {
+		rules[i].Trigger = ""
 	}
 
 	candles := make([]*box.Candle, 20)

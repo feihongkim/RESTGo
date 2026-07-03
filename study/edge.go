@@ -507,7 +507,7 @@ type BaselineOutput struct {
 
 // HandleBaselineBacktest 는 "stock baseline" 명령 진입점
 func HandleBaselineBacktest(args []string) {
-	stratPath := "rules/strategy3.yaml"
+	stratPath := "rules/buy_crypto_15m.yaml"
 	markets := []string{"KRW-BTC", "KRW-ETH", "KRW-XRP", "KRW-SOL"}
 	outputPath := "zpicture/baseline_t_rules.json"
 	if len(args) >= 1 && args[0] != "" {

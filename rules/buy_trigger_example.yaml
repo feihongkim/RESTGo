@@ -1,0 +1,50 @@
+# ─────────────────────────────────────────────────────────────────────
+# 트리거(메인이벤트) 아키텍처 예시 전략 (2026-07-03)
+#
+# 실행: RESTGO_BUY_RULES=rules/strategy_trigger_example.yaml ./RESTGo stock analyze <종목코드> 250
+#
+# 구조: trigger(edge, 메인이벤트)가 발화한 캔들에서만 when/when_not/any_of(level, 상태)를 평가.
+#   trigger:  stg/trigger_registry.go 등록명 — DefBoxBreakout / PriceBreakout /
+#             BBLowerBreakdown / BBLowerReentry / BBSqueezeBreakout
+#   once_per: defbox(기본, DefBox 구간당 1회) / cooldown(PerCandleCooldownBars 봉) / none
+#   조건명:   stg/buy_conditions_registry.go 등록명 (기존과 동일)
+#
+# 주의: strategy1.yaml(C# 정합 대상)은 trigger 없이 on_breakout 경로를 유지한다 — 의도적 이원 운영.
+# ─────────────────────────────────────────────────────────────────────
+
+settings:
+  PerCandleCooldownBars: 5
+
+strategies:
+  # 예시 1 — BB 하단 복귀 매수 (John Bollinger Method III W바텀의 재진입 시점)
+  # 메인이벤트: 종가가 하단 밴드 아래에서 안으로 복귀한 "순간"
+  # 필터: RSI 과매도 상태에서의 복귀만 인정
+  - name: "T_BBLowerReentry_RSI"
+    trigger: BBLowerReentry
+    when:
+      - IsRSIOversold
+    once_per: cooldown
+    signal: "즉시매수"
+
+  # 예시 2 — 스퀴즈 상방 돌파 매수 (변동성 수축 후 확장)
+  # 메인이벤트: %B가 임계값을 상향 돌파한 "순간" + 최근 구간 스퀴즈 존재
+  # 필터: 거래량 z-score 급증 동반 시에만
+  - name: "T_SqueezeBreakout_Volume"
+    trigger: BBSqueezeBreakout
+    when:
+      - IsVolumeZScoreSpike
+    once_per: cooldown
+    signal: "즉시매수"
+
+  # 예시 3 — DefBox 재돌파 매수 (stateless 트리거 버전)
+  # 기존 on_breakout과 달리 박스 아래로 되밀린 뒤 재돌파해도 edge가 다시 발생한다.
+  # once_per: defbox 이므로 같은 DefBox에서 룰 매칭은 1회만.
+  - name: "T_DefBoxBreakout_Basic"
+    trigger: DefBoxBreakout
+    def_count_min: 1
+    when:
+      - IsCloseNearDefboxPrice
+    when_not:
+      - HasExcessiveUpperWick
+    once_per: defbox
+    signal: "즉시매수"

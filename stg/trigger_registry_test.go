@@ -157,3 +157,35 @@ func TestDefBoxBreakoutTriggerRegistered(t *testing.T) {
 		}
 	}
 }
+
+// 같은 트리거 그룹 내 첫 매칭 승리 — YAML 순서가 우선순위
+func TestEvaluateTriggerSignals_FirstMatchWinsPerTrigger(t *testing.T) {
+	ctx := triggerTestCtx()
+	rules := []RuleConfig{
+		{Name: "T1", Trigger: "t_trig_on", When: []string{"t_false"}, Signal: "buy1"}, // 미매칭
+		{Name: "T2", Trigger: "t_trig_on", When: []string{"t_true"}, Signal: "buy2"},  // 첫 매칭
+		{Name: "T3", Trigger: "t_trig_on", When: []string{"t_true"}, Signal: "buy3"},  // 같은 트리거 → 스킵
+	}
+	got := evaluateTriggerSignals(ctx, DefaultSettings(), rules)
+	if len(got) != 1 || got[0].Reason != "T2" {
+		t.Fatalf("첫 매칭 승리 실패: %+v", got)
+	}
+	// T3는 매칭 기록도 없어야 함 (다음 캔들에서 발화 가능)
+	if _, fired := ctx.LastBuySignalPosition["T3"]; fired {
+		t.Errorf("스킵된 룰에 발화 기록이 남음")
+	}
+}
+
+// 서로 다른 트리거는 같은 캔들에서 독립적으로 발화 가능
+func TestEvaluateTriggerSignals_DifferentTriggersIndependent(t *testing.T) {
+	RegisterTrigger("t_trig_on2", func(ctx *box.TradingContext, s Settings) bool { return true })
+	ctx := triggerTestCtx()
+	rules := []RuleConfig{
+		{Name: "TA", Trigger: "t_trig_on", When: []string{"t_true"}, Signal: "a"},
+		{Name: "TB", Trigger: "t_trig_on2", When: []string{"t_true"}, Signal: "b"},
+	}
+	got := evaluateTriggerSignals(ctx, DefaultSettings(), rules)
+	if len(got) != 2 {
+		t.Fatalf("독립 트리거 발화 수 = %d, want 2", len(got))
+	}
+}

@@ -32,8 +32,8 @@ go build
 # 전 종목 배치 분석 → zpicture/batch_signals.json 저장 (고루틴 20개 병렬)
 ./RESTGo stock batch [일수=250]
 
-# 매수/매도 전략 YAML 교체 (기본: rules/strategy1.yaml / rules/sell_strategy1.yaml)
-RESTGO_BUY_RULES=rules/strategy2.yaml RESTGO_SELL_RULES=rules/sell_strategy1_posOnly_mh25.yaml ./RESTGo stock analyze 005930 250
+# 매수/매도 전략 YAML 교체 (기본: rules/strategy1.yaml / rules/sell_default.yaml)
+RESTGO_BUY_RULES=rules/buy_indicator.yaml RESTGO_SELL_RULES=rules/sell_positive_only_mh25.yaml ./RESTGo stock analyze 005930 250
 
 # ── 연구/백테스트 명령 (study/ 패키지, DB 필요) ──
 ./RESTGo stock gridtest <grid_yaml> [output_json]          # 파라미터 그리드 서치 (rules/grid_*.yaml)
@@ -158,20 +158,23 @@ C# 참조 프로젝트: `ssh feihong@192.168.3.120:/home/feihong/code/REST/RESTG
 
 **C# 미포팅 항목**: `CandlePatternEvaluator`의 미사용 패턴 함수들과 `VirtualTrading`/백테스트 헬퍼만 남음 (모두 현행 파이프라인 미사용 — 상세는 `/home/feihong/code/Jarvis/project/RESTGo/csharp-porting-gap.md`)
 
-### rules/ 디렉토리 구성
+### rules/ 디렉토리 구성 (2026-07-03 네이밍 정리 — 상세는 `rules/README.md`)
 
-| 파일/디렉토리 | 내용 |
-|--------------|------|
-| `strategy1.yaml` | **기본 매수 전략** — Box 구조 기반 (SingleDef 5종 + MultiDef 3종) |
-| `strategy2.yaml` | 지표(RSI/Bollinger/MA) 기반 매수 전략 6종 (I01~I06) |
-| `strategy3.yaml` | 암호화폐 15분봉용 — Donchian 이탈+RSI, EMA9>21 게이트, ATR 손절/익절·시간청산 |
-| `strategy_bb_pure.yaml` | John Bollinger 원서 3대 방법 순수 구현 (Method III W바텀 → II Band Walk → I 스퀴즈) |
-| `strategy_bb_hybrid.yaml` | Box 구조 + BB 복합 (SH1 하단반등+DefBox, SH2 스퀴즈+MultiDef, SH3 중심선+S01) |
-| `sell_strategy1.yaml` | **기본 매도 전략** — 매도 룰 21종 + 5-Path 결정(Critical→Composite→Extension→Expiry→Individual) + 부분매도(weight) |
-| `sell_strategy1_positive_only.yaml`, `sell_strategy1_posOnly_mh25.yaml` | 매도 전략 변형 (양수 수익 구간만 / max_holding 조정) |
-| `grid_*.yaml` | `gridtest`용 파라미터 스윕 정의 (예: `grid_stage2.yaml` 135조합×4마켓) |
-| `ablation/` (27개) | 소거 실험 — 매도 룰 제거·보유기간(mh10~mh60)·회복임계 스윕 + s06 조건별 기여도 측정 |
-| `archive/` (14개) | 과거 전략 스냅샷 보관 (strategy3의 stage별 백업, 단일 룰 격리 버전 등) — 수정 금지, 참고용 |
+파일명 규칙: `buy_*` 매수 / `sell_*` 매도 / `grid_*` 그리드 서치 / `ablation/` 소거 실험 / `archive/` 스냅샷(수정 금지)
+
+| 파일/디렉토리 | 평가 방식 | 내용 |
+|--------------|-----------|------|
+| `strategy1.yaml` | on_breakout | **기본 매수 전략** — C# REST1 포팅 (Box 구조 8룰 + Core-3 게이트). C# 매수 정합 기준이라 이름·형식 유지 |
+| `buy_indicator.yaml` | trigger | (구 strategy2) DefBox 돌파 순간 지표(RSI/BB/MA) 확증 6종 (I01~I06) |
+| `buy_bb_pure.yaml` | trigger | (구 strategy_bb_pure) John Bollinger 3대 방법 (MIIIb/MIII W바텀 → MII 밴드워크 → MI 스퀴즈) |
+| `buy_bb_hybrid.yaml` | trigger | (구 strategy_bb_hybrid) Box+BB 복합 (SH1~SH4) |
+| `buy_trigger_example.yaml` | trigger | 트리거 문법 예시 3종 (문법 설명 주석 포함) |
+| `buy_crypto_15m.yaml` | per_candle | (구 strategy3) 암호화폐 15분봉 — 보류 영역, 추후 보완 예정 |
+| `sell_default.yaml` | — | (구 sell_strategy1) **기본 매도** — 21룰 + 5-Path 결정 + 부분매도. 매도 로직은 재설계 예정 |
+| `sell_positive_only.yaml`, `sell_positive_only_mh25.yaml` | — | 매도 변형 (양수 수익 구간만 / max_holding 25) |
+| `grid_crypto_*.yaml` | — | `gridtest`용 파라미터 스윕 (암호화폐, 보류 영역) |
+| `ablation/` (27개) | — | 소거 실험 — 매도 룰 제거·보유기간·회복임계 스윕 + s06 조건별 기여도 (실험 재현성 위해 구형식 유지) |
+| `archive/` (14개) | — | 과거 전략 스냅샷 보관 — 수정 금지, 참고용 |
 
 ### 연구 인프라 (`study/` 패키지)
 
@@ -202,8 +205,8 @@ C# 참조 프로젝트: `ssh feihong@192.168.3.120:/home/feihong/code/REST/RESTG
 - **돌파 게이트** (`stg/analyzer.go` `checkDefBoxBreakout`): 가격 돌파 + 거래대금(`IsVolumeBreakout`) + ATR 모두 충족해야 돌파 인정. 룰 평가는 **돌파 캔들에서만** 1회 수행되고, 이후 캔들은 ShortRange 사후 평가만 한다 (C# BLogic 정렬)
 - **FollowUp/REST2** (`stg/buy_followup.go`): REST2 S13~S16(`DetermineBuySignal`, 후보군1 상태머신) + S17~S20 재진입 처리. S15/S17/S18은 C#과 동일하게 사문(도달 불가) 게이트 보존
 - **트리거(메인이벤트) 아키텍처** (`stg/trigger_registry.go`, 2026-07-03): 룰에 `trigger:` 필드를 지정하면 on_breakout/per_candle 대신 트리거 경로에서 평가된다 — 매 캔들 트리거(edge)를 확인하고 발화한 캔들에서만 when/when_not/any_of 평가. 중복 발화는 `once_per:` (defbox 기본 / cooldown / none)로 제어. 트리거는 반드시 **edge**(발생 순간에만 true)여야 하며 `RegisterTrigger()`로 등록 — level(상태) 조건과 레지스트리가 분리되어 있음. 등록된 트리거: `DefBoxBreakout`(stateless 복합 게이트), `PriceBreakout`(가격만), `BBLowerBreakdown`, `BBLowerReentry`, `BBSqueezeBreakout` (edge 함수는 `cond/buy_triggers.go`). 기존 on_breakout 룰(trigger 미지정)은 DamChecker 상태머신 경로 그대로 — batch A/B로 신호 동일성 검증 완료
-- `stock/handler.go`가 `stg.LoadStrategy(buyRulesPath())` / `stg.LoadSellStrategyFile(sellRulesPath())`로 로드 — 기본 `rules/strategy1.yaml` / `rules/sell_strategy1.yaml`, 환경변수 `RESTGO_BUY_RULES` / `RESTGO_SELL_RULES`로 교체 가능 (예: `RESTGO_BUY_RULES=rules/strategy2.yaml ./RESTGo stock analyze 005930 250`). **매수 룰 로드 실패 시** `stg/analyzer.go`의 하드코딩 fallback 로직이 조용히 사용되므로 주의 (매도 룰 실패는 `[warn]` 출력 후 매도 평가 비활성)
-- **CriticalFailure 임계값** 등 전역 매도 설정은 `sell_strategy1.yaml`에서 YAML로 오버라이드 가능
+- `stock/handler.go`가 `stg.LoadStrategy(buyRulesPath())` / `stg.LoadSellStrategyFile(sellRulesPath())`로 로드 — 기본 `rules/strategy1.yaml` / `rules/sell_default.yaml`, 환경변수 `RESTGO_BUY_RULES` / `RESTGO_SELL_RULES`로 교체 가능 (예: `RESTGO_BUY_RULES=rules/buy_indicator.yaml ./RESTGo stock analyze 005930 250`). **매수 룰 로드 실패 시** `stg/analyzer.go`의 하드코딩 fallback 로직이 조용히 사용되므로 주의 (매도 룰 실패는 `[warn]` 출력 후 매도 평가 비활성)
+- **CriticalFailure 임계값** 등 전역 매도 설정은 `sell_default.yaml`에서 YAML로 오버라이드 가능
 
 ### Python 패키지 구조 (`py/`)
 

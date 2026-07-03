@@ -64,7 +64,7 @@ type WFOutput struct {
 // HandleWalkForward 는 "stock walkforward" 명령 진입점
 //
 // 사용법: ./RESTGo stock walkforward <market> [output_json] [strategy_yaml]
-// 예) ./RESTGo stock walkforward KRW-ETH zpicture/wf_eth_t11d.json rules/strategy3.yaml
+// 예) ./RESTGo stock walkforward KRW-ETH zpicture/wf_eth_t11d.json rules/buy_crypto_15m.yaml
 func HandleWalkForward(args []string) {
 	if len(args) == 0 {
 		fmt.Println("사용법: ./RESTGo stock walkforward <market> [output_json] [strategy_yaml]")
@@ -72,7 +72,7 @@ func HandleWalkForward(args []string) {
 	}
 	market := args[0]
 	outputPath := "zpicture/wf_" + strings.ToLower(strings.ReplaceAll(market, "-", "_")) + ".json"
-	stratPath := "rules/strategy3.yaml"
+	stratPath := "rules/buy_crypto_15m.yaml"
 	if len(args) >= 2 && args[1] != "" {
 		outputPath = args[1]
 	}

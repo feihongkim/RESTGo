@@ -18,11 +18,11 @@ import (
 
 const (
 	strategyPath     = "rules/strategy1.yaml"
-	sellStrategyPath = "rules/sell_strategy1.yaml"
+	sellStrategyPath = "rules/sell_default.yaml"
 )
 
 // buyRulesPath 는 매수 전략 YAML 경로를 반환한다.
-// RESTGO_BUY_RULES 환경변수로 대안 전략 파일(예: rules/strategy2.yaml)을 지정할 수 있다.
+// RESTGO_BUY_RULES 환경변수로 대안 전략 파일(예: rules/buy_indicator.yaml)을 지정할 수 있다.
 func buyRulesPath() string {
 	if p := os.Getenv("RESTGO_BUY_RULES"); p != "" {
 		return p
@@ -31,7 +31,7 @@ func buyRulesPath() string {
 }
 
 // sellRulesPath 는 매도 전략 YAML 경로를 반환한다.
-// RESTGO_SELL_RULES 환경변수로 대안 전략 파일(예: rules/sell_strategy1_posOnly_mh25.yaml)을 지정할 수 있다.
+// RESTGO_SELL_RULES 환경변수로 대안 전략 파일(예: rules/sell_positive_only_mh25.yaml)을 지정할 수 있다.
 func sellRulesPath() string {
 	if p := os.Getenv("RESTGO_SELL_RULES"); p != "" {
 		return p

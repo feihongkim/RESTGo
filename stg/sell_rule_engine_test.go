@@ -6,9 +6,9 @@ import (
 	"RESTGo/box"
 )
 
-// TestLoadSellStrategy 는 rules/sell_strategy1.yaml이 정상 로드되고 21개 룰을 가지는지 확인.
+// TestLoadSellStrategy 는 rules/sell_default.yaml이 정상 로드되고 21개 룰을 가지는지 확인.
 func TestLoadSellStrategy(t *testing.T) {
-	settings, err := LoadSellStrategy("../rules/sell_strategy1.yaml")
+	settings, err := LoadSellStrategy("../rules/sell_default.yaml")
 	if err != nil {
 		t.Fatalf("LoadSellStrategy 실패: %v", err)
 	}

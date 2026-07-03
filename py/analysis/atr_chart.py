@@ -161,7 +161,7 @@ def render(df: pd.DataFrame, market: str, out_png: str, chunk_idx: int, total: i
     ax_price.set_title(
         f'{market} 15분봉 ATR 채널 [{chunk_idx}/{total}]\n'
         f'{period}  |  ATR 평균 비율 {avg_atr_pct:.2f}%  '
-        f'|  Stop×{ATR_STOP_MULT} / Target×{ATR_TARGET_MULT} (strategy3.yaml)',
+        f'|  Stop×{ATR_STOP_MULT} / Target×{ATR_TARGET_MULT} (buy_crypto_15m.yaml)',
         fontsize=11,
     )
 

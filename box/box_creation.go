@@ -32,8 +32,10 @@ func isDuplicateBox(boxList []*Box, kindOfBox, boxPosition int, price float64) b
 // AddHighBox 는 상승->하락 전환 시 고점 저항선 박스 생성 및 추가
 func AddHighBox(candles []*Candle, boxList *[]*Box, boxDay int, boxPrice float64, position int, priceOrigin float64) {
 	if len(*boxList) == 0 {
-		// 첫 고점 박스: 고점=저항선 의미에 맞춰 Resist로 생성.
-		// (C# CreateAndAddHighBox는 첫 박스만 boxType=0(Support)로 두지만, 의미 정합 우선으로 의도적 편차)
+		// 첫 고점 박스: 고점=저항선 의미에 맞춰 Resist로 생성. (2026-07-03 변경: 기존 Support → Resist)
+		// C# CreateAndAddHighBox는 첫 박스만 boxType=0(Support)로 두지만, 의미 정합 우선으로 의도적 편차.
+		// 주의: BoxType은 조건 로직이 참조한다 — cond/buy_conditions.go, buy_indicator.go, buy_oscillator.go,
+		//       sell_ma_reversal.go, sell_helpers.go. 첫 박스가 지지/저항 판정에 걸리는 케이스의 동작이 바뀔 수 있음.
 		box := CreateBox(candles[boxDay].Date, boxDay, boxPrice, position, BoxTypeResistance, KindBox, priceOrigin)
 		*boxList = append(*boxList, box)
 		return

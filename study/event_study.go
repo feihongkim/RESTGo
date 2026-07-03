@@ -17,7 +17,7 @@ import (
 // 2026-06-17 사용자 요청 — hannam DB 16년치 데이터로 전략별 이벤트 스터디.
 //
 // 각 전략명별로 발화 시점 t에서 t+1/5/10/20일 수익률 측정.
-// 매수 룰 평가만 사용 — 매도 시스템(sell_strategy1.yaml) 비활성화 (LoadSellStrategyFile 안 호출).
+// 매수 룰 평가만 사용 — 매도 시스템(sell_default.yaml) 비활성화 (LoadSellStrategyFile 안 호출).
 
 const (
 	sesRoundTripCost = 0.004 // 0.4% 왕복비용 (한국주)
@@ -110,7 +110,7 @@ type StrategyEventStudyOutput struct {
 }
 
 // HandleStrategyEventStudy 는 "stock strategy_study [--with-sell] [--upbit-15m|--upbit-30m] [yaml] [out]" 명령 진입점.
-// --with-sell: sell_strategy1.yaml 활성화 (5-Path 매도)
+// --with-sell: sell_default.yaml 활성화 (5-Path 매도)
 // --upbit-15m: TUF DB Upbit 4 마켓 15m 캔들
 // --upbit-30m: TUF DB Upbit 15m → 30m 집계
 func HandleStrategyEventStudy(args []string) {
@@ -164,7 +164,7 @@ func runStrategyEventStudy(stratPath, outputPath string, withSell bool, mode str
 		return
 	}
 	if withSell {
-		sellPath := "rules/sell_strategy1.yaml"
+		sellPath := "rules/sell_default.yaml"
 		if p := os.Getenv("RESTGO_SELL_RULES"); p != "" {
 			sellPath = p
 		}

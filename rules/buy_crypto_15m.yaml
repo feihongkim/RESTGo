@@ -1,4 +1,4 @@
-# rules/strategy3.yaml — Stage A-3 다중 트리거 OR 묶음 (2026-06-13)
+# rules/buy_crypto_15m.yaml (구 strategy3.yaml) — Stage A-3 다중 트리거 OR 묶음 (2026-06-13)
 #
 # 변경: T11D 단독 → T11D + T12D 병존 (first-match-wins로 OR 효과)
 # 사유: Stage D 결과 빈도 확대 실패 (1.00~1.11×), 진짜 병목은 트리거 자체 희소성

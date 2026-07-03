@@ -26,7 +26,7 @@ type SellRuleConfig struct {
 	Category          string       `yaml:"category"`           // "Critical"/"Profit"/"Loss"/"Technical"/"Extension"/"Expiry"
 }
 
-// SellStrategyFile 은 sell_strategy1.yaml 최상위 구조.
+// SellStrategyFile 은 sell_default.yaml 최상위 구조.
 type SellStrategyFile struct {
 	Settings  SellSettingsYAML `yaml:"settings"`
 	Composite CompositeYAML    `yaml:"composite"`
