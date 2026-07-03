@@ -31,6 +31,12 @@ func isDuplicateBox(boxList []*Box, kindOfBox, boxPosition int, price float64) b
 
 // AddHighBox 는 상승->하락 전환 시 고점 저항선 박스 생성 및 추가
 func AddHighBox(candles []*Candle, boxList *[]*Box, boxDay int, boxPrice float64, position int, priceOrigin float64) {
+	if len(*boxList) == 0 {
+		// C# CreateAndAddHighBox: BoxList가 비어 있으면 첫 고점 박스는 boxType=0
+		box := CreateBox(candles[boxDay].Date, boxDay, boxPrice, position, BoxTypeSupport, KindBox, priceOrigin)
+		*boxList = append(*boxList, box)
+		return
+	}
 	if len(*boxList) > 0 {
 		last := (*boxList)[len(*boxList)-1]
 		// 직전이 DefBox이고 같은 위치/가격이면 추가 안 함 (Python 동일 로직)

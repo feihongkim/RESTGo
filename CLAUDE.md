@@ -4,12 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 프로젝트 개요 및 목적
 
-**RESTGo**는 Go로 작성된 CLI 기반 운영 도구입니다. 크게 세 가지 역할을 합니다:
+**RESTGo**는 Go로 작성된 CLI 기반 운영 도구이자 퀀트 연구 플랫폼입니다. 크게 네 가지 역할을 합니다:
 1. **다중 MSSQL 쿼리** — 4개 DB(key/han/var/KIS2)에 직접 쿼리 실행
 2. **주식 Box/매수·매도 분석** — C# `Stock1` 프로젝트의 핵심 분석 로직을 Go로 포팅한 `box/` + `indicator/` + `cond/` + `stg/` 패키지. 매수·매도 전략은 `rules/*.yaml`의 YAML 룰 엔진으로 정의
-3. **Python 분석 스크립트 실행** — `py/` 디렉토리의 차트·백테스트·테마 전략 스크립트를 Go CLI에서 호출
+3. **백테스트·전략 연구** — `study/` 패키지의 러너 12종 (그리드 서치, 엣지 검증, walk-forward, 페어 트레이딩, W패턴 스캔 등). 대상 데이터는 국내 일봉(KIS2 1.5년 / hannam 16년), 해외 일봉, Upbit 암호화폐 15분봉
+4. **Python 분석 스크립트 실행** — `py/` 디렉토리의 차트·백테스트·테마 전략 스크립트를 Go CLI에서 호출
 
 모든 DB 접속 정보는 AES-256-GCM으로 암호화되어 `config.yaml`에 저장됩니다.
+
+패키지 의존 방향은 단방향 계층입니다: `box`/`cond`/`indicator`/`console`(인프라) → `stg`(전략 엔진, box·cond만 의존) → `study`(연구 러너) → `stock`(CLI 라우터) → `main.go`
 
 ## 주요 명령어
 
@@ -29,6 +32,23 @@ go build
 # 전 종목 배치 분석 → zpicture/batch_signals.json 저장 (고루틴 20개 병렬)
 ./RESTGo stock batch [일수=250]
 
+# 매수/매도 전략 YAML 교체 (기본: rules/strategy1.yaml / rules/sell_strategy1.yaml)
+RESTGO_BUY_RULES=rules/strategy2.yaml RESTGO_SELL_RULES=rules/sell_strategy1_posOnly_mh25.yaml ./RESTGo stock analyze 005930 250
+
+# ── 연구/백테스트 명령 (study/ 패키지, DB 필요) ──
+./RESTGo stock gridtest <grid_yaml> [output_json]          # 파라미터 그리드 서치 (rules/grid_*.yaml)
+./RESTGo stock edgetest [markets_csv] [output_json]        # 조건별 돌파 엣지 검증 (Welch t-검정)
+./RESTGo stock baseline [markets_csv] [output_json] [strategy_yaml]   # 베이스라인 백테스트 (결정성 검증 포함)
+./RESTGo stock walkforward <market> [output_json] [strategy_yaml]     # IS/OOS 슬라이딩 워크포워드 검증
+./RESTGo stock pairtest                                    # 페어 트레이딩 검증 (상관·ADF)
+./RESTGo stock baseline30m [markets_csv] [output_json] [strategy_yaml]  # 30분봉 베이스라인
+./RESTGo stock breakdown_study                             # 돌파/이탈/회복 이벤트 사후 분석
+./RESTGo stock strategy_study                              # YAML 전략 매수/매도 이벤트 스터디
+./RESTGo stock wbottom_scan [--foreign-jp|--foreign-cn|--foreign-hk] [n]   # W바텀(%B) 패턴 예시 수집
+./RESTGo stock miiib_scan [--foreign-*] [--max N] [--out path]             # MIIIb_WBottomBox 신호 수집
+./RESTGo stock wdefbox_scan [--foreign-*|--hannam] [--max N] [--candles N] [--out path] [--defbox-only]  # W+DefBox 결합 신호 스캔
+./RESTGo stock combined_scan [--foreign-*] [--max N] [--out path]          # WD+S1 합성 전략 스캔
+
 # Python 분석 스크립트 실행 (host: /home/feihong/code/REST/RESTGo/venv)
 ./RESTGo py box_chart <종목코드>
 ./RESTGo py box_batch
@@ -36,7 +56,7 @@ go build
 ./RESTGo py tg_send
 ./RESTGo py <스크립트경로> [인수...]   # 임의 스크립트 직접 실행
 
-# 테스트 (DB 불필요 — cond/stg는 순수 함수)
+# 테스트 (DB 불필요 — cond/indicator/stg는 순수 함수. box/study/stock은 테스트 없음)
 go test ./...
 
 # 의존성 정리
@@ -104,32 +124,72 @@ C# 참조 프로젝트: `ssh feihong@192.168.3.120:/home/feihong/code/REST/RESTG
 | `box/defbox.go` | `biz/BoxEvaluators/DefBoxConditionEvaluator.cs` | DefBox 생성 조건 |
 | `box/box_price.go` | `biz/BoxEvaluators/BoxPriceCalculator.cs` | 구간 최고/최저가 계산 |
 | `box/box_creation.go` | `biz/BoxEvaluators/BoxCreationService.cs` | Box 생성·추가 |
-| `box/candle_loader.go` | — (DB 커스텀) | KIS2 DB 캔들 조회 |
-| `indicator/candle_processor.go` | `common/CandleProcessor.cs` | 스케일링·MA·ATR 계산 (rolling sum O(N)) |
+| `box/sell_types.go` | — | 매도 측 타입 (SellDecision 등) |
+| `box/candle_loader.go` | — (DB 커스텀) | 일봉 로더: KIS2(`FetchCandles`, 1.5년) + hannam(`FetchCandlesHannam`, 16년) + 해외(`FetchCandlesForeign`) + 종목 리스트 조회 |
+| `box/candle_loader_upbit.go` | — (Go 신규) | Upbit 암호화폐 15분봉 로더 (`FetchUpbitCandles15m`, TUF DB `candles_15m`) |
+| `box/candle_loader_pair.go` | — (Go 신규) | Upbit 페어 15분봉 로더 (두 마켓 시각 정렬 → `PairedCandle`) |
+| `indicator/candle_processor.go` | `common/CandleProcessor.cs` | 스케일링·MA(5/20/60/120/200)·기울기·ATR 단일 패스 계산 (rolling sum O(N)) |
 | `indicator/bollinger.go` | `common/CandleProcessor.cs` (Bollinger 영역) | Bollinger Bands (rolling sum of squares) |
 | `indicator/rsi.go` | — (Go 신규) | RSI (Wilder, period=14) |
+| `indicator/` 기타 10종 | — (Go 신규) | EMA·MACD·ADX·Donchian·Keltner·Stochastic·OBV·SuperTrend·VWAP + `pair.go`(페어 스프레드·Pearson 상관·ADF 정상성 검정) |
 | `cond/buy_conditions.go` | `biz/Evaluators/BoxConditionEvaluator.cs` | Box 구조 매수 조건 함수 |
 | `cond/buy_conditions_extra.go` | `biz/Evaluators/MovingAverageConditionEvaluator.cs`, `CandlePatternEvaluator.cs`, `PenetrationEvaluator.cs` 등 | MA·캔들패턴·관통·MultiDef 조건 |
 | `cond/buy_oscillator.go` | `biz/Evaluators/OscillatorEvaluator.cs` | 오실레이터·관통 옵션 + 공용 오실로 헬퍼 |
 | `cond/buy_followup.go` | `BuyDecisionProcessor.FollowUp.cs` 의존 조건 + `VolumeConditionEvaluator.cs` | ShortRange·거래대금 게이트·재진입 조건 |
 | `cond/buy_indicator.go` | — (Go 신규) | 지표 기반 매수 조건 16종 (RSI 5·Bollinger 5·MA 6) |
+| `cond/buy_indicator_15m.go` | — (Go 신규) | 15분봉(암호화폐)용 매수 조건 (Donchian·EMA·볼린저 Method I~III·W바텀 Box 등) |
 | `cond/sell_*.go` (10개) | `biz/SellEvaluators/` 전체 | 매도 조건 함수 (`sell_` prefix로 분류) |
-| `stg/analyzer.go` | `biz/StockAnalyzer.cs` + `biz/BFunction.cs` (BLogic) | 분석 메인 루프·돌파 게이트 |
+| `stg/analyzer.go` | `biz/StockAnalyzer.cs` + `biz/BFunction.cs` (BLogic) | 분석 메인 루프·돌파 게이트 — 모든 백테스트의 공통 엔진 |
 | `stg/buy_rule_engine.go` | `biz/Processors/BuyDecisionProcessor.cs` (개념적 대응) | YAML 룰 평가 엔진 |
 | `stg/buy_followup.go` | `BuyDecisionProcessor.Options.cs`(REST2) + `FollowUp.cs` | S13~S20 후속 매수 처리 |
 | `stg/buy_conditions_registry.go` | — | 조건명 → `cond` 함수 매핑 등록 |
-| `stg/sell_*.go` (5개) | `SellDecisionEngine.cs` + `SellSignalCollector.cs` + `SFunction.*` | 매도 룰 엔진·5-Path 결정·부분 매도 |
-| `stg/buy_settings.go` | `vo/Settings.cs` | 분석 설정값 |
+| `stg/sell_*.go` (6개) | `SellDecisionEngine.cs` + `SellSignalCollector.cs` + `SFunction.*` | 매도 룰 엔진·5-Path 결정·부분 매도·지속성 추적·15분봉 청산(`sell_15m.go`) |
+| `stg/buy_settings.go` | `vo/Settings.cs` | 분석 설정값 (`ApplySettingsOverrides`로 그리드 서치 오버라이드) |
 | `stg/types.go` | `vo/BuySignalCondition.cs`, `vo/AnalysisResult.cs` | 신호·결과 타입 (Positions 포함) |
-| `rules/strategy1.yaml` | — | 매수 전략 정의 (SingleDef 5종 + MultiDef 3종) |
-| `rules/strategy2.yaml` | — | 지표 기반 매수 전략 6종 (I01~I06) — `RESTGO_BUY_RULES`로 교체 실행 |
-| `rules/sell_strategy1.yaml` | — | 매도 룰 21종 + Composite/전역 설정 |
+| `stg/wpattern_analyze.go` | — (Go 신규) | 순수 W바텀(MIIIb) 패턴 분석기 `WPatternAnalyze` (DefBox 게이트 없음) |
+| `stg/wpattern_defbox.go` | — (Go 신규) | W바텀+DefBox 결합 분석기 `WDefBoxAnalyze` (W신호 50% 진입 + 20일 내 DefBox 돌파 시 추가 50%) |
+| `stg/combined_analyze.go` | — (Go 신규) | WD(분할진입) + S1(DefBox 단독 100% 진입) 합성 신호 단일 패스 탐지 `CombinedAnalyze` |
+| `study/` | — | 연구 러너 12종 (아래 "연구 인프라" 절 참조) |
+| `stock/handler.go` | — | CLI 라우터 — `analyze`/`batch`는 직접 처리, 연구 명령은 `study.*`로 위임 |
 | `py/` | — | Python 차트·백테스트·테마 전략 스크립트 |
 | `console/py_runner.go` | — | Go→Python 실행 래퍼 |
 
 **cond/·stg/ 파일명 규칙**: `buy_*` = 매수 측, `sell_*` = 매도 측, prefix 없음 = 공용(`stg/analyzer.go` 통합 루프, `stg/types.go` 결과 타입), `*_test.go` = 해당 파일 테스트(Go 규칙상 같은 폴더).
 
 **C# 미포팅 항목**: `CandlePatternEvaluator`의 미사용 패턴 함수들과 `VirtualTrading`/백테스트 헬퍼만 남음 (모두 현행 파이프라인 미사용 — 상세는 `/home/feihong/code/Jarvis/project/RESTGo/csharp-porting-gap.md`)
+
+### rules/ 디렉토리 구성
+
+| 파일/디렉토리 | 내용 |
+|--------------|------|
+| `strategy1.yaml` | **기본 매수 전략** — Box 구조 기반 (SingleDef 5종 + MultiDef 3종) |
+| `strategy2.yaml` | 지표(RSI/Bollinger/MA) 기반 매수 전략 6종 (I01~I06) |
+| `strategy3.yaml` | 암호화폐 15분봉용 — Donchian 이탈+RSI, EMA9>21 게이트, ATR 손절/익절·시간청산 |
+| `strategy_bb_pure.yaml` | John Bollinger 원서 3대 방법 순수 구현 (Method III W바텀 → II Band Walk → I 스퀴즈) |
+| `strategy_bb_hybrid.yaml` | Box 구조 + BB 복합 (SH1 하단반등+DefBox, SH2 스퀴즈+MultiDef, SH3 중심선+S01) |
+| `sell_strategy1.yaml` | **기본 매도 전략** — 매도 룰 21종 + 5-Path 결정(Critical→Composite→Extension→Expiry→Individual) + 부분매도(weight) |
+| `sell_strategy1_positive_only.yaml`, `sell_strategy1_posOnly_mh25.yaml` | 매도 전략 변형 (양수 수익 구간만 / max_holding 조정) |
+| `grid_*.yaml` | `gridtest`용 파라미터 스윕 정의 (예: `grid_stage2.yaml` 135조합×4마켓) |
+| `ablation/` (27개) | 소거 실험 — 매도 룰 제거·보유기간(mh10~mh60)·회복임계 스윕 + s06 조건별 기여도 측정 |
+| `archive/` (14개) | 과거 전략 스냅샷 보관 (strategy3의 stage별 백업, 단일 룰 격리 버전 등) — 수정 금지, 참고용 |
+
+### 연구 인프라 (`study/` 패키지)
+
+각 파일이 `stock` 서브커맨드 하나에 대응하는 `Handle*` 함수를 노출합니다. 백테스트 코어는 전부 `stg.AnalyzeWithRules`를 공유합니다.
+
+| 파일 | 명령 | 역할 |
+|------|------|------|
+| `grid.go` | `gridtest` | 파라미터 조합 전개 → `stg.ApplySettingsOverrides`로 스윕, 재현성 검증(`verifyGridDeterminism`) 포함 |
+| `edge.go` | `edgetest`, `baseline` | 조건 레지스트리 기반 조건별 전방 수익률 수집 + Welch t-검정, 베이스라인은 결정성 검증(동일 입력 2회 비교) 포함 |
+| `walk_forward.go` | `walkforward` | 15분봉 기준 IS 6개월/OOS 2개월 슬라이딩 윈도우, OOS/IS 성과비(RatioPF·RatioAvgNet) 중앙값으로 과최적화 판정 |
+| `pair.go` | `pairtest` | 페어 트레이딩 검증 (상관·ADF, stg 미의존 순수 지표 스터디) |
+| `baseline_30m.go` | `baseline30m` | 30분봉 타임프레임 베이스라인 |
+| `breakdown.go` | `breakdown_study` | 돌파/이탈/회복 이벤트 사후 분석 (stg 미의존) |
+| `event_study.go` | `strategy_study` | YAML 전략 매수/매도 이벤트 스터디 |
+| `wbottom_scan.go` / `miiib_scan.go` / `wdefbox_scan.go` / `combined_scan.go` | `*_scan` | W패턴 분석기 3종(`WPatternAnalyze`/`WDefBoxAnalyze`/`CombinedAnalyze`) 호출 → 전 종목 예시 JSON 덤프 |
+| `stats.go` | (내부) | 승률/PF/MDD 등 공용 통계 헬퍼 |
+
+연구 결과 JSON(베이스라인 등)은 `zpicture/`에 저장됩니다. 커밋 메시지가 연구 노트 역할을 하며, 실패한 실험도 "실패"로 명시해 커밋으로 보존하는 규율을 따릅니다.
 
 ### YAML 룰 엔진 (`stg/buy_rule_engine.go` + `rules/strategy1.yaml`)
 
@@ -141,13 +201,14 @@ C# 참조 프로젝트: `ssh feihong@192.168.3.120:/home/feihong/code/REST/RESTG
 - **전략별 중복 신호 방지**: 같은 DefBox 구간에서 한 전략은 1회만 발화 (`ctx.LastBuySignalPosition`에 기록, DefBox 변경 시 리셋 — C# `LastBuySignalPosition_StrategyN` 포팅)
 - **돌파 게이트** (`stg/analyzer.go` `checkDefBoxBreakout`): 가격 돌파 + 거래대금(`IsVolumeBreakout`) + ATR 모두 충족해야 돌파 인정. 룰 평가는 **돌파 캔들에서만** 1회 수행되고, 이후 캔들은 ShortRange 사후 평가만 한다 (C# BLogic 정렬)
 - **FollowUp/REST2** (`stg/buy_followup.go`): REST2 S13~S16(`DetermineBuySignal`, 후보군1 상태머신) + S17~S20 재진입 처리. S15/S17/S18은 C#과 동일하게 사문(도달 불가) 게이트 보존
-- `stock/handler.go`가 `stg.LoadStrategy(buyRulesPath())`로 로드 — 기본 `rules/strategy1.yaml`, `RESTGO_BUY_RULES` 환경변수로 교체 가능 (예: `RESTGO_BUY_RULES=rules/strategy2.yaml ./RESTGo stock analyze 005930 250`). 로드 실패 시 `stg/analyzer.go`의 하드코딩 fallback 로직 사용 (실패가 조용히 무시되므로 주의)
+- `stock/handler.go`가 `stg.LoadStrategy(buyRulesPath())` / `stg.LoadSellStrategyFile(sellRulesPath())`로 로드 — 기본 `rules/strategy1.yaml` / `rules/sell_strategy1.yaml`, 환경변수 `RESTGO_BUY_RULES` / `RESTGO_SELL_RULES`로 교체 가능 (예: `RESTGO_BUY_RULES=rules/strategy2.yaml ./RESTGo stock analyze 005930 250`). **매수 룰 로드 실패 시** `stg/analyzer.go`의 하드코딩 fallback 로직이 조용히 사용되므로 주의 (매도 룰 실패는 `[warn]` 출력 후 매도 평가 비활성)
+- **CriticalFailure 임계값** 등 전역 매도 설정은 `sell_strategy1.yaml`에서 YAML로 오버라이드 가능
 
 ### Python 패키지 구조 (`py/`)
 
 | 디렉토리 | 역할 |
 |----------|------|
-| `py/analysis/` | Box 차트 생성 (`box_chart.py`는 `zpicture/batch_signals.json` 소비), MA5 변곡 분석 |
+| `py/analysis/` | Box 차트 생성 (`box_chart.py`는 `zpicture/batch_signals.json` 소비), MA5 변곡 분석, W패턴/WDefBox 연구 스크립트 다수 (`wd_*_study.py`, `wbottom_chart.py` 등) |
 | `py/batch/` | 차트 일괄 생성, Telegram 발송 |
 | `py/strategy/theme/` | Box 분석과 독립적인 외국인 수급 기반 테마 전략 4종 (momentum/rotation/surge/sector_surge) |
 | `py/backtest/` | 테마 전략 공통 백테스트 엔진 |
@@ -162,7 +223,7 @@ C# 참조 프로젝트: `ssh feihong@192.168.3.120:/home/feihong/code/REST/RESTG
 ## 원격 서버 접속 정보
 
 - `ssh feihong@192.168.3.120` → 이 컨테이너의 호스트 서버 (hostname: `white`)에 접속됩니다.
-- SSH 키: `~/.ssh/id_rsa` (RSA 4096-bit, 공개키 등록 완료)
+- SSH 키: `~/.ssh/id_ed25519` (ED25519, 공개키 등록 완료)
 - C# 참조 프로젝트: `/home/feihong/code/REST/RESTG/Stock1/` (branch: `feature/multi-position-sell-strategy`)
 
 ## 주의사항

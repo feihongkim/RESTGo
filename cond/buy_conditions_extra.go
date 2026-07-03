@@ -15,12 +15,21 @@ func IsBullishCandle(ctx *box.TradingContext) bool {
 	return c.Close > c.Open
 }
 
+// HasPullbackOrCorrection 은 DefBox~현재 직전 구간에 눌림목(Gradient<0) 또는
+// 조정(Low≤MA20 && 종가≤시가) 캔들이 1개 이상 있는지 확인 (C# CandlePatternEvaluator.HasPullbackOrCorrection)
 func HasPullbackOrCorrection(ctx *box.TradingContext) bool {
-	if ctx.Position < 1 {
-		return false
+	for i := ctx.DefboxPosition; i >= 0 && i < ctx.Position && i < len(ctx.CandleList); i++ {
+		// 눌림목: DefBox 이후 상승세 꺾임
+		if i > ctx.DefboxPosition && ctx.CandleList[i].Gradient < 0.0 {
+			return true
+		}
+		// 조정: 저가가 20이평 이하이고 음봉(도지 포함)
+		if ctx.CandleList[i].Low <= ctx.CandleList[i].Ma20 &&
+			ctx.CandleList[i].Close <= ctx.CandleList[i].Open {
+			return true
+		}
 	}
-	prev := ctx.CandleList[ctx.Position-1]
-	return (prev.Close-prev.Open) < 0 || prev.Close < prev.Open
+	return false
 }
 
 // ── Box 구조 조건 ──────────────────────────────────────────

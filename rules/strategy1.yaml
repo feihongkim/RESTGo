@@ -1,3 +1,7 @@
+# 모든 REST1 전략은 C# BuyConditionProcessor.HasCoreCommonConditions의 Core-3 게이트
+# (IsBullishCandle && HasPullbackOrCorrection && IsMa20NearMa60Complex)를 통과해야 함.
+# 각 룰 when 상단 3개 조건이 이에 해당 (2026-07-03 포팅 정합성 검증 후 복원).
+# any_of의 IsMa20NearMa60Complex는 게이트로 인해 항상 충족되지만 C# 전략별 조건의 1:1 보존을 위해 유지.
 strategies:
   # ─── SingleDef (DefCount == 1): 엄격한 순서 (더 많은 조건 → 먼저 평가) ───
 
@@ -5,6 +9,9 @@ strategies:
   - name: "S03_SingleDefStrictBuy_Option2"
     def_count: 1
     when:
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
       - IsCloseNearDefboxPrice
       - IsMainboxCloserThanCurrentPosition
       - IsSingleBreakout
@@ -27,6 +34,9 @@ strategies:
   - name: "S01_SingleDefBuy"
     def_count: 1
     when:
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
       - IsCloseNearDefboxPrice
       - IsMainboxCloserThanCurrentPosition
       - IsSingleBreakout
@@ -48,6 +58,9 @@ strategies:
   - name: "S23_Intersection_4n8"
     def_count: 1
     when:
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
       - IsCloseNearDefboxPrice
       - IsMainboxCloserThanCurrentPosition
       - IsSingleBreakout
@@ -65,6 +78,9 @@ strategies:
   - name: "S08_SingleDefRelaxedDistanceBuy_Option3"
     def_count: 1
     when:
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
       - IsCloseNearDefboxPrice
       - IsMainboxDistanceTwiceOrMore
       - IsSingleBreakout
@@ -82,6 +98,9 @@ strategies:
   - name: "S04_SingleDefWeakFoundationBuy_Option2"
     def_count: 1
     when:
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
       - IsCloseNearDefboxPrice
       - IsMainboxCloserThanCurrentPosition
       - IsBoxCountBetween2
@@ -96,6 +115,9 @@ strategies:
   - name: "S05_MultiDefStandardBuy_Option2"
     def_count_min: 2
     when:
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
       - IsCloseNearDefboxPrice
       - IsMa60StrongerThanMa120By2Percent
       - IsBoxDensityValidByDistribution
@@ -110,6 +132,9 @@ strategies:
   - name: "S06_MultiDefRelaxedBuy_Option2"
     def_count_min: 2
     when:
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
       - IsCloseNearDefboxPrice
       - IsMultiDefRelaxedDamCondition
       - IsPenetrationOptionValid
@@ -121,6 +146,9 @@ strategies:
   - name: "S10_MultiDefStandardBuy_Option3"
     def_count_min: 2
     when:
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
       - IsCloseNearDefboxPrice
       - IsMa60StrongerThanMa120By2Percent
       - IsBoxDensityValidByDistribution

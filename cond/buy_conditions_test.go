@@ -334,3 +334,67 @@ func TestConditionsExtra_TODO(t *testing.T) {
 		"IsPenetrationOptionValid, GetMultiDefboxDamCount 테스트 작성 — " +
 		"C# 원본 또는 실제 종목(예: 005930) 분석 결과를 골든 데이터로 사용")
 }
+
+// ─────────────────────────────────────────────
+// HasPullbackOrCorrection (C# CandlePatternEvaluator 정렬)
+// ─────────────────────────────────────────────
+
+func TestHasPullbackOrCorrection(t *testing.T) {
+	// 캔들 5개: DefboxPosition=1, Position=4 → 스캔 구간은 [1,3]
+	mk := func(gradient, low, ma20, open, close float64) *box.Candle {
+		return &box.Candle{Gradient: gradient, Low: low, Ma20: ma20, Open: open, Close: close}
+	}
+	bullish := func(gradient float64) *box.Candle {
+		// 양봉 + 저가가 MA20 위 (눌림/조정 어느 쪽도 아님)
+		return mk(gradient, 100, 90, 99, 101)
+	}
+
+	tests := []struct {
+		name    string
+		candles []*box.Candle
+		want    bool
+	}{
+		{
+			"눌림목: DefBox 이후 Gradient<0 캔들 존재",
+			[]*box.Candle{bullish(1), bullish(1), mk(-0.5, 100, 90, 99, 101), bullish(1), bullish(1)},
+			true,
+		},
+		{
+			"조정: Low≤MA20 && 음봉 캔들 존재",
+			[]*box.Candle{bullish(1), bullish(1), mk(1, 89, 90, 101, 99), bullish(1), bullish(1)},
+			true,
+		},
+		{
+			"조정: Low≤MA20 && 도지(Close==Open)도 인정",
+			[]*box.Candle{bullish(1), bullish(1), mk(1, 90, 90, 100, 100), bullish(1), bullish(1)},
+			true,
+		},
+		{
+			"DefBox 위치 캔들의 Gradient<0은 눌림목 아님 (i > DefboxPosition)",
+			[]*box.Candle{bullish(1), mk(-0.5, 100, 90, 99, 101), bullish(1), bullish(1), bullish(1)},
+			false,
+		},
+		{
+			"현재 캔들(Position)은 스캔 제외",
+			[]*box.Candle{bullish(1), bullish(1), bullish(1), bullish(1), mk(-0.5, 89, 90, 101, 99)},
+			false,
+		},
+		{
+			"구간 내 눌림/조정 없음",
+			[]*box.Candle{bullish(1), bullish(1), bullish(1), bullish(1), bullish(1)},
+			false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := box.NewTradingContext(tt.candles, nil)
+			ctx.DefboxPosition = 1
+			ctx.Position = 4
+
+			if got := HasPullbackOrCorrection(ctx); got != tt.want {
+				t.Errorf("HasPullbackOrCorrection() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
