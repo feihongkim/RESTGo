@@ -88,7 +88,10 @@ func analyzeInternal(candles []*box.Candle, settings Settings, rules []RuleConfi
 		candles[i].Curvekey = box.AnalyzeCurvature(ctx)
 
 		// 3. DefBox 돌파 및 매수 신호 평가 (REST1 + REST2 + FollowUp — 한 캔들 다중 신호 가능)
-		for _, signal := range evaluateBuySignals(ctx, settings, rules) {
+		//    + 트리거 룰 평가 (trigger: 필드가 있는 룰 — 메인이벤트 발화 캔들에서만 조건 평가)
+		candleSignals := evaluateBuySignals(ctx, settings, rules)
+		candleSignals = append(candleSignals, evaluateTriggerSignals(ctx, settings, rules)...)
+		for _, signal := range candleSignals {
 			result.BuySignals = append(result.BuySignals, signal)
 			if activeSellSettings != nil {
 				pos := buildTradePositionFromSignal(ctx, signal)
@@ -365,6 +368,88 @@ func findLastDefBoxIndex(boxList []*box.Box) int {
 	return -1
 }
 
+// evaluateTriggerSignals 는 trigger: 필드가 있는 룰을 평가한다.
+// 매 캔들에서 각 룰의 트리거(메인이벤트, edge)를 먼저 확인하고,
+// 트리거가 발화한 캔들에서만 when/when_not/any_of 조건을 평가한다.
+// 같은 트리거를 쓰는 룰이 여러 개면 트리거는 캔들당 1회만 계산한다 (메모이즈).
+// 발화 신호의 체결은 on_breakout과 동일한 same-candle fill.
+//
+// 기존 on_breakout(DamChecker 상태머신)과의 차이: DefBox당 1회 게이트가 아니라
+// 트리거 edge마다 조건을 평가한다. 중복 발화는 once_per로 제어한다 (기본 defbox).
+// REST2/FollowUp 상태(BuyHelper, Bsig 등)는 건드리지 않는다.
+func evaluateTriggerSignals(ctx *box.TradingContext, s Settings, rules []RuleConfig) []BuySignal {
+	if len(rules) == 0 {
+		return nil
+	}
+	var signals []BuySignal
+	triggerFired := map[string]bool{} // 캔들 내 트리거 메모이즈
+
+	for _, rule := range rules {
+		if rule.Trigger == "" {
+			continue
+		}
+
+		// 중복 발화 방지 (once_per)
+		switch rule.OncePer {
+		case "", "defbox":
+			// DefBox 구간당 1회 — DefBox 변경 시 evaluateBuySignals의 ResetBuySignalPositions()로 리셋
+			if _, fired := ctx.LastBuySignalPosition[rule.Name]; fired {
+				continue
+			}
+		case "cooldown":
+			if lastPos, fired := ctx.LastPerCandleSignalPosition[rule.Name]; fired {
+				if ctx.Position-lastPos < s.PerCandleCooldownBars {
+					continue
+				}
+			}
+		case "none":
+			// 제한 없음
+		}
+
+		// DefCount 필터 (on_breakout과 동일)
+		if rule.DefCount > 0 && ctx.DefCount != rule.DefCount {
+			continue
+		}
+		if rule.DefCountMin > 0 && ctx.DefCount < rule.DefCountMin {
+			continue
+		}
+
+		// 트리거(메인이벤트) 확인 — 캔들당 1회 계산
+		fired, seen := triggerFired[rule.Trigger]
+		if !seen {
+			fn, ok := triggerRegistry[rule.Trigger]
+			if !ok {
+				fmt.Printf("[rule] 미등록 트리거: %s\n", rule.Trigger)
+				triggerFired[rule.Trigger] = false
+				continue
+			}
+			fired = fn(ctx, s)
+			triggerFired[rule.Trigger] = fired
+		}
+		if !fired {
+			continue
+		}
+
+		// 트리거 발화 캔들에서만 세부 조건 평가
+		sig, stratName := evaluateSingleRule(rule, ctx, s)
+		if sig == "" {
+			continue
+		}
+
+		switch rule.OncePer {
+		case "", "defbox":
+			ctx.LastBuySignalPosition[stratName] = ctx.Position
+		case "cooldown":
+			ctx.LastPerCandleSignalPosition[stratName] = ctx.Position
+		}
+
+		out := buildTriggeredSignal(ctx, stratName)
+		out.Helper = "trigger:" + rule.Trigger + ":" + sig
+		signals = append(signals, out)
+	}
+	return signals
+}
+
 // evaluatePerCandleSignals 는 evaluation: per_candle 로 표시된 룰을 매 캔들에서 평가한다.
 // 쿨다운: 동일 룰은 PerCandleCooldownBars 봉 내 재발화 불가.
 // 포지션 중복: 같은 전략명의 활성 포지션이 있으면 스킵.
@@ -374,7 +459,7 @@ func evaluatePerCandleSignals(ctx *box.TradingContext, s Settings, rules []RuleC
 	}
 	var signals []BuySignal
 	for _, rule := range rules {
-		if rule.Evaluation != "per_candle" {
+		if rule.Evaluation != "per_candle" || rule.Trigger != "" {
 			continue
 		}
 		// 쿨다운 체크

@@ -20,6 +20,16 @@ type RuleConfig struct {
 	WhenNot     []string `yaml:"when_not"`      // 반드시 false여야 하는 조건
 	Signal      string   `yaml:"signal"`
 	Evaluation  string   `yaml:"evaluation"` // "on_breakout" (기본) or "per_candle"
+
+	// Trigger 는 메인이벤트 이름 (triggerRegistry 등록명). 지정 시 이 룰은
+	// on_breakout/per_candle 경로 대신 트리거 경로에서 평가된다:
+	// 매 캔들 트리거(edge)를 확인하고, 발화한 캔들에서만 when/when_not/any_of를 평가.
+	Trigger string `yaml:"trigger"`
+	// OncePer 는 트리거 룰의 중복 발화 방지 범위:
+	//   "defbox"(기본) — 같은 DefBox 구간에서 1회 (DefBox 변경 시 리셋, on_breakout과 동일 시맨틱)
+	//   "cooldown"     — PerCandleCooldownBars 봉 쿨다운 (per_candle과 동일 시맨틱)
+	//   "none"         — 제한 없음 (트리거 edge마다 발화)
+	OncePer string `yaml:"once_per"`
 }
 
 // strategiesFile 은 YAML 파일 최상위 구조
@@ -321,8 +331,8 @@ func evaluateSingleRule(rule RuleConfig, ctx *box.TradingContext, s Settings) (s
 // per_candle 룰은 이 경로를 건너뛴다 (evaluatePerCandleSignals에서 처리).
 func EvaluateRules(rules []RuleConfig, ctx *box.TradingContext, s Settings) (string, string) {
 	for _, rule := range rules {
-		// per_candle 룰은 돌파 경로에서 제외
-		if rule.Evaluation == "per_candle" {
+		// per_candle 룰과 트리거 룰은 돌파 경로에서 제외
+		if rule.Evaluation == "per_candle" || rule.Trigger != "" {
 			continue
 		}
 
