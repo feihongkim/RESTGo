@@ -242,12 +242,14 @@ func evaluateBuySignals(ctx *box.TradingContext, s Settings, rules []RuleConfig)
 					if sig := checkBuyConditions(ctx, s, rules); sig.Triggered {
 						out = append(out, sig)
 					}
-					// REST2 DetermineBuySignal (S13~S16)
-					if sig := determineBuySignal(ctx, s); sig != nil {
-						out = append(out, *sig)
+					// REST2 DetermineBuySignal (S13~S16) — EnableREST2로 제어
+					if s.EnableREST2 {
+						if sig := determineBuySignal(ctx, s); sig != nil {
+							out = append(out, *sig)
+						}
 					}
 				}
-			} else if ctx.DamChecker == 2 {
+			} else if ctx.DamChecker == 2 && s.EnableREST2 {
 				// 돌파 이후 캔들: ShortRange 사후 평가만 (C# ProcessPostBreakoutConditions)
 				if sig := processPostBreakoutSignals(ctx); sig != nil {
 					out = append(out, *sig)
@@ -257,14 +259,16 @@ func evaluateBuySignals(ctx *box.TradingContext, s Settings, rules []RuleConfig)
 	}
 
 	// 후보군1 상태에서 추가 매수 기회 (C# BLogic2 통합 — Bsig는 캔들 간 유지됨)
-	if !ctx.BuyOn && ctx.Bsig == "후보군1" {
+	if s.EnableREST2 && !ctx.BuyOn && ctx.Bsig == "후보군1" {
 		if sig := processAdditionalBuySignals(ctx); sig != nil {
 			out = append(out, *sig)
 		}
 	}
 
-	// FollowUp 재진입 처리 (C#: BLogic 끝에서 항상 호출)
-	out = append(out, processFollowUpBuyDecisions(ctx)...)
+	// FollowUp 재진입 처리 (C#: BLogic 끝에서 항상 호출) — EnableREST2로 제어
+	if s.EnableREST2 {
+		out = append(out, processFollowUpBuyDecisions(ctx)...)
+	}
 
 	return out
 }

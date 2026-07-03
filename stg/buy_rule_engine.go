@@ -97,6 +97,10 @@ func applySettingsOverrides(s *Settings, overrides map[string]interface{}) {
 			if b, ok := v.(bool); ok {
 				s.ATREntryFilterEnabled = b
 			}
+		case "EnableREST2":
+			if b, ok := v.(bool); ok {
+				s.EnableREST2 = b
+			}
 		case "ATREntryMaxThreshold":
 			if f, ok := toFloat64(v); ok {
 				s.ATREntryMaxThreshold = f

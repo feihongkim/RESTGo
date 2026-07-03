@@ -236,3 +236,96 @@ func TestIsBBSqueezeBreakoutEvent_NoBollinger(t *testing.T) {
 		t.Error("당일 밴드 미계산이면 false")
 	}
 }
+
+// ─────────────────────────────────────────────
+// edge 재발동: 상태가 끊겼다 다시 충족되면 새 edge (o o o x o 패턴)
+// ─────────────────────────────────────────────
+
+func TestIsBBLowerBreakdownEvent_RefiresAfterInterruption(t *testing.T) {
+	// 이탈 상태 패턴: [위, 아래, 아래, 위, 아래] → edge는 idx1과 idx4에서만
+	below := []bool{false, true, true, false, true}
+	ctx := triggerCandles(5, func(i int, c *box.Candle) {
+		setBB(c, 100, 110)
+		if below[i] {
+			c.Close = 98 // 하단(100) 아래
+		} else {
+			c.Close = 102 // 하단 위
+		}
+	})
+
+	want := []bool{false, true, false, false, true} // idx0은 prev 없음
+	for pos := 0; pos < 5; pos++ {
+		ctx.Position = pos
+		if got := IsBBLowerBreakdownEvent(ctx); got != want[pos] {
+			t.Errorf("Position %d: got %v, want %v (패턴 o o o x o의 재발동 검증)", pos, got, want[pos])
+		}
+	}
+}
+
+// ─────────────────────────────────────────────
+// IsWBottomBoxCompletedEvent / HasDefBoxBeforeWPattern
+// ─────────────────────────────────────────────
+
+// wBottomFixture 는 S-R-S W패턴이 완성된 컨텍스트를 구성한다.
+//   P1(support, pos30): 직전 10봉(20~29) 저가≤BB하단 + 밴드폭 팽창(25~30 상단 확대)
+//   resist(pos38): 종가 110 < MA20 115
+//   P2(support, pos45): 직전 10봉 하단 이탈 없음 (BB 내부)
+//   인식 캔들(pos46): 종가 110 < MA20 115, 마지막 box CurvePosition=46
+func wBottomFixture(withDefBox bool) *box.TradingContext {
+	candles := make([]*box.Candle, 60)
+	for i := range candles {
+		c := &box.Candle{Open: 109, Close: 110, High: 111, Low: 108, Ma20: 115}
+		setBB(c, 100, 110)
+		if i >= 20 && i <= 29 {
+			c.Low = 99 // P1 직전 구간 BB 하단 이탈
+		}
+		if i >= 25 && i <= 34 {
+			setBB(c, 100, 110+2*float64(i-24)) // 밴드폭 팽창
+		}
+		candles[i] = c
+	}
+	var boxes []*box.Box
+	if withDefBox {
+		boxes = append(boxes, &box.Box{BoxPosition: 15, BoxType: box.BoxTypeResistance, KindOfBox: box.KindDefBox})
+	}
+	boxes = append(boxes,
+		&box.Box{BoxPosition: 30, BoxType: box.BoxTypeSupport, KindOfBox: box.KindBox, CurvePosition: 31},
+		&box.Box{BoxPosition: 38, BoxType: box.BoxTypeResistance, KindOfBox: box.KindBox, CurvePosition: 39},
+		&box.Box{BoxPosition: 45, BoxType: box.BoxTypeSupport, KindOfBox: box.KindBox, CurvePosition: 46},
+	)
+	ctx := box.NewTradingContext(candles, boxes)
+	ctx.Position = 46
+	return ctx
+}
+
+func TestIsWBottomBoxCompletedEvent_Fires(t *testing.T) {
+	ctx := wBottomFixture(false)
+	if !IsWBottomBoxCompletedEvent(ctx, 50) {
+		t.Fatal("W패턴 완성 순간인데 트리거 미발동")
+	}
+}
+
+func TestIsWBottomBoxCompletedEvent_NotNewBox(t *testing.T) {
+	ctx := wBottomFixture(false)
+	ctx.Position = 47 // 마지막 box 인식 다음 캔들 → CurvePosition(46) != Position → edge 아님
+	if IsWBottomBoxCompletedEvent(ctx, 50) {
+		t.Fatal("인식 캔들이 지났는데 발동 (edge 위반)")
+	}
+}
+
+func TestIsWBottomBoxCompletedEvent_AboveMa20Blocked(t *testing.T) {
+	ctx := wBottomFixture(false)
+	ctx.CandleList[46].Close = 120 // MA20(115) 위 → 약세 구간 아님
+	if IsWBottomBoxCompletedEvent(ctx, 50) {
+		t.Fatal("MA20 위인데 발동")
+	}
+}
+
+func TestHasDefBoxBeforeWPattern(t *testing.T) {
+	if !HasDefBoxBeforeWPattern(wBottomFixture(true), 50) {
+		t.Error("P1 이전 DefBox 있는데 false")
+	}
+	if HasDefBoxBeforeWPattern(wBottomFixture(false), 50) {
+		t.Error("DefBox 없는데 true")
+	}
+}

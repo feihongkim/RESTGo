@@ -12,6 +12,10 @@ type Settings struct {
 
 	// ATR 필터
 	ATREntryFilterEnabled bool
+	// EnableREST2: REST2/FollowUp 엔진 신호(S13~S20 — DetermineBuySignal·PostBreakout
+	// ShortRange·후보군1 추가매수·재진입) 활성 여부. 기본 true (C# 정합 — strategy1 동작).
+	// 트리거 전략을 단독 연구·운용할 때 YAML settings에서 false로 끈다.
+	EnableREST2 bool
 	ATREntryMaxThreshold  float64 // ATR/Price 최대값 (기본 0.05 = 5%)
 
 	// 윗꼬리 필터
@@ -91,6 +95,7 @@ func DefaultSettings() Settings {
 		DefBoxNearPriceThreshold:            0.07,
 		MainBoxNearPriceThreshold:           0.15,
 		ATREntryFilterEnabled:               true,
+		EnableREST2:                         true,
 		ATREntryMaxThreshold:                0.05,
 		DefBoxUpperWickToBodyRatioThreshold: 4.0,
 		MaSpreadThreshold:                   0.05,

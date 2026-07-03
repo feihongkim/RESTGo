@@ -1,0 +1,35 @@
+# buy_wdefbox.yaml — W패턴 + DefBox 중력 전략 (핵심 전략, 2026-07-03 재설계)
+#
+# ── 전략 가설 ─────────────────────────────────────────────────────────
+# DefBox = 이전에 고점을 넘으려다 실패한 경험 → 그 지점에 강한 중력(인력)이 형성된다.
+# 어떤 매물대를 돌파하려다 실패·붕괴하면서 BB 하단을 이탈해 W패턴을 만들었다면:
+#   ① 위에 형성된 DefBox가 아래 가격을 끌어당기는 중력 속성
+#   ② W패턴 자체의 반등 속성
+# 이 결합해 강한 상승을 만든다.
+#
+# ── 구조 ─────────────────────────────────────────────────────────────
+# W패턴은 봉이 아니라 "5이평 변곡"을 기준으로 하므로 필연적으로 3개 Box를 가진다:
+#   support(P1) → resist → support(P2)
+#
+# trigger: WBottomBox — 마지막 support box(P2)의 인식 시점 (S-R-S 완성 순간).
+#   strategy1의 DefBox 돌파와 동일한 지위의 메인이벤트.
+#   트리거 내부에서 W패턴 정의 자체를 검증한다 (cond.IsWBottomBoxCompletedEvent):
+#     - P1 형성 직전 구간이 BB 하단을 막 이탈했는지 (직전 10봉 중 5봉 이상 저가≤하단 + 밴드폭 팽창)
+#     - P2가 BB 내부에 있는지 (하단 이탈 아님)
+#     - 인식 캔들이 20이평 아래인지 (약세 구간에서의 W 완성)
+#
+# when: HasDefBoxBeforeWPattern — P1 앞에 DefBox가 형성되어 있는지 (중력 가정의 핵심 조건)
+#
+# 사용법: RESTGO_BUY_RULES=rules/buy_wdefbox.yaml ./RESTGo stock analyze <종목코드> 250
+# 참고: 연구용 분석기 stg.WDefBoxAnalyze(wdefbox_scan)와 동일 계보 — 이 파일은 룰 엔진 버전.
+
+settings:
+  EnableREST2: false   # W 전략 단독 — REST2/FollowUp 엔진 신호(S13~S20) 비활성
+
+strategies:
+  - name: "W_DefBoxGravity"
+    trigger: WBottomBox
+    once_per: cooldown
+    when:
+      - HasDefBoxBeforeWPattern
+    signal: "W중력매수"

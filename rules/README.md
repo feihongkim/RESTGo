@@ -32,5 +32,5 @@
 ## 평가 방식 요약
 
 - **on_breakout** (trigger 미지정): C# DamChecker 상태머신 — DefBox당 게이트 통과 1회만 룰 평가. strategy1 전용.
-- **trigger**: 룰별 메인이벤트(edge)가 발화한 캔들에서만 when/when_not/any_of 평가. `once_per: defbox|cooldown|none`으로 중복 제어. 같은 트리거 그룹 내 첫 매칭 승리. 등록 트리거: `DefBoxBreakout`, `PriceBreakout`, `BBLowerBreakdown`, `BBLowerReentry`, `BBSqueezeBreakout` (`stg/trigger_registry.go`).
+- **trigger**: 룰별 메인이벤트(edge)가 발화한 캔들에서만 when/when_not/any_of 평가. `once_per: defbox|cooldown|none`으로 중복 제어. 같은 트리거 그룹 내 첫 매칭 승리. 등록 트리거: `DefBoxBreakout`, `PriceBreakout`, `WBottomBox`, `BBLowerBreakdown`, `BBLowerReentry`, `BBSqueezeBreakout` (`stg/trigger_registry.go`).
 - **per_candle**: 매 캔들 평가 + 쿨다운 (가상자산 15분봉 전용, 보류 영역).

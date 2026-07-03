@@ -1,0 +1,69 @@
+# sell_wdefbox_dstop20.yaml — sell_wdefbox + 재난 손절(-20%) A/B 변형 (2026-07-03)
+#
+# A/B 목적: 무손절 구성의 급락장 꼬리(2008년 -3.41%)를 -20% 재난 손절이
+# 얼마나 깎는지, 전체 성과 비용은 얼마인지 측정.
+#
+# ── 설계 근거 (zpicture/wdefbox_minhold_sweep_report.md) ─────────────────
+# W중력의 h20 엣지(+2.50%, t=6.80)는 10~20일 보유에서 발현된다.
+# 손절 유예 스윕(0/3/5/10/20봉) 결과 전 구간 단조 개선 → 손절 룰 14종 무용 확정.
+# Technical 3종도 사실상 손절 역할(4,554건, -1.69%)이라 제거 시 +0.89% → +2.57% 도약.
+# 최종 실현 성과가 h20 무조건부 평균과 수렴: 보유 자체가 전략이다.
+#
+# ── 구성: "시간청산 + 익절"만 ────────────────────────────────────────────
+#   익절 2종(갭상승/BB상단) + 기간만료(20봉, 연장 메커니즘 포함)
+#   손절·기술적 청산 없음. min_holding_period 유예 해킹이 아닌 명시적 룰 구성.
+#   주의: 급락장 꼬리 리스크 존재 (2008년 -3.41%) — 재난 손절 A/B는
+#   rules/ablation/sell_wdefbox_dstop20.yaml 참조.
+#
+# 사용법: RESTGO_BUY_RULES=rules/buy_wdefbox.yaml RESTGO_SELL_RULES=rules/sell_wdefbox.yaml ...
+
+settings:
+  max_holding_period: 20
+  auto_liquidate_on_expiry: true
+  default_sell_weight: 0.5
+  small_remaining_threshold: 0.125
+  minimum_execution_size: 0.01
+
+sell_rules:
+  # ===== Path 3: Extension (기간만료 후 연장 중 청산 수단) =====
+  - name: MA5BreakdownDuringExtension
+    path: extension
+    when: [IsExtensionActive, IsMA5BreakdownDuringExtension]
+    tracking: { immediate: true }
+    weight: 1.0
+    category: Extension
+
+  # ===== Path 4: Expiry — 20봉 시간청산 (연장 가능) =====
+  - name: PeriodExpiry
+    path: expiry
+    when: [IsPeriodExpired]
+    tracking: { count_min: 1, ratio_min: 0.01 }
+    weight: 1.0
+    can_extend: true
+    category: Expiry
+
+  # ===== Path 5: Individual — 익절만 =====
+  - name: GapUpProfit
+    path: individual
+    priority: 3
+    when: [IsGapUpTakeProfit]
+    tracking: { count_min: 1, ratio_min: 0.01 }
+    weight: 0.5
+    category: Profit
+
+  - name: BBUpperBreakoutProfit
+    path: individual
+    priority: 3
+    when: [IsBBUpperBreakoutProfit]
+    tracking: { count_min: 1, ratio_min: 0.01 }
+    weight: 0.5
+    category: Profit
+
+  # ===== Path 1: Critical — 재난 손절 (매수가 대비 -20% 도달 시 즉시 전량 청산) =====
+  # IsStopLoss는 settings.StopLossThreshold(기본 -20.0%)를 사용
+  - name: DisasterStop
+    path: critical
+    when: [IsStopLoss]
+    tracking: { immediate: true }
+    weight: 1.0
+    category: Critical

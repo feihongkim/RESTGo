@@ -129,3 +129,61 @@ func TestTrackAndCheck(t *testing.T) {
 		t.Fatal("immediate 모드에서도 triggered=false면 false 기대")
 	}
 }
+
+// TestMinHoldingPeriodGrace 는 min_holding_period 손절 유예 게이트를 확인:
+// 유예 기간 내에는 Critical/Loss 룰이 발화하지 않고, Profit 룰은 정상 발화하며,
+// 유예 종료 후에는 Critical 룰이 다시 발화한다.
+func TestMinHoldingPeriodGrace(t *testing.T) {
+	sellConditionRegistry["TestAlwaysTrue"] = func(ctx *box.TradingContext, pos *box.TradePosition, s SellSettings) bool { return true }
+	savedRules := activeSellRules
+	defer func() {
+		delete(sellConditionRegistry, "TestAlwaysTrue")
+		activeSellRules = savedRules
+	}()
+
+	activeSellRules = []SellRuleConfig{
+		{Name: "FakeCritical", Path: "critical", When: []string{"TestAlwaysTrue"},
+			Tracking: SellTracking{CountMin: 1, RatioMin: 0.01}, Weight: 1.0, Category: "Critical"},
+		{Name: "FakeLoss", Path: "individual", Priority: 1, When: []string{"TestAlwaysTrue"},
+			Tracking: SellTracking{CountMin: 1, RatioMin: 0.01}, Weight: 0.5, Category: "Loss"},
+		{Name: "FakeProfit", Path: "individual", Priority: 9, When: []string{"TestAlwaysTrue"},
+			Tracking: SellTracking{CountMin: 1, RatioMin: 0.01}, Weight: 0.5, Category: "Profit"},
+	}
+
+	candles := make([]*box.Candle, 10)
+	for i := range candles {
+		candles[i] = &box.Candle{Close: 100, CloseOrigin: 100, Date: "2026-01-01"}
+	}
+
+	newPos := func() *box.TradePosition {
+		return box.NewTradePosition("T1", "TestStg", 0, 100, 100, "2026-01-01")
+	}
+
+	s := DefaultSellSettings()
+	s.MinHoldingPeriod = 5
+
+	// 보유 2봉 (유예 중): Critical/Loss 억제 → Profit(individual)이 결정
+	ctx := box.NewTradingContext(candles, nil)
+	ctx.Position = 2
+	d := EvaluateSellSignals(ctx, newPos(), s)
+	if !d.ShouldSell || d.PrimaryReason != "FakeProfit" {
+		t.Errorf("유예 중: 기대 FakeProfit 발화, 실제 ShouldSell=%v Reason=%q", d.ShouldSell, d.PrimaryReason)
+	}
+
+	// 보유 5봉 (유예 종료): Critical이 최우선 발화
+	ctx2 := box.NewTradingContext(candles, nil)
+	ctx2.Position = 5
+	d2 := EvaluateSellSignals(ctx2, newPos(), s)
+	if !d2.ShouldSell || d2.PrimaryReason != "FakeCritical" {
+		t.Errorf("유예 종료: 기대 FakeCritical 발화, 실제 ShouldSell=%v Reason=%q", d2.ShouldSell, d2.PrimaryReason)
+	}
+
+	// MinHoldingPeriod=0 (비활성): 보유 2봉이어도 Critical 발화 (기존 동작 보존)
+	s0 := DefaultSellSettings()
+	ctx3 := box.NewTradingContext(candles, nil)
+	ctx3.Position = 2
+	d3 := EvaluateSellSignals(ctx3, newPos(), s0)
+	if !d3.ShouldSell || d3.PrimaryReason != "FakeCritical" {
+		t.Errorf("비활성: 기대 FakeCritical 발화, 실제 ShouldSell=%v Reason=%q", d3.ShouldSell, d3.PrimaryReason)
+	}
+}

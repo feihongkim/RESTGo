@@ -39,7 +39,9 @@ func (m *msConn) initDB(dbname string) error {
 		connStr = fmt.Sprintf("server=%s;user id=%s;password=%s;database=%s;encrypt=disable;trustServerCertificate=true;connection timeout=3",
 			Env.MSSQL_ADDR, Env.MSSQL_USER, Env.MSSQL_PASSWORD, Env.MSSQL_DBKEY)
 	case "han":
-		connStr = fmt.Sprintf("server=%s;user id=%s;password=%s;database=%s;encrypt=disable;trustServerCertificate=true;connection timeout=3",
+		// hannam 16년치 테이블(stock_price_kor_d001)의 DISTINCT/범위 쿼리는 3초를 초과할 수 있어
+		// han만 read timeout을 60초로 설정 (연구 러너 strategy_study/wdefbox_scan --hannam 등)
+		connStr = fmt.Sprintf("server=%s;user id=%s;password=%s;database=%s;encrypt=disable;trustServerCertificate=true;connection timeout=60",
 			EnvHan.MSSQL_ADDR, Env.MSSQL_USER, Env.MSSQL_PASSWORD, EnvHan.MSSQL_DBHan)
 	case "var":
 		connStr = fmt.Sprintf("server=%s;user id=%s;password=%s;database=%s;encrypt=disable;trustServerCertificate=true;connection timeout=3",

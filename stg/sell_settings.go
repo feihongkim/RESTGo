@@ -8,6 +8,7 @@ import "RESTGo/cond"
 type SellSettings struct {
 	// === 글로벌 ===
 	MaxHoldingPeriod         int     // 보유 기간 만료 (기본 20)
+	MinHoldingPeriod         int     // 손절 유예 기간 — 보유 N봉 미만이면 Critical/Loss 룰 미발화 (기본 0=비활성)
 	AutoLiquidateOnExpiry    bool    // 만료 시 자동 청산 여부 (기본 true)
 	DefaultSellWeight        float64 // 기본 매도 비율 (기본 0.5)
 	SmallRemainingThreshold  float64 // 소량 잔여 자동 청산 (기본 0.125)

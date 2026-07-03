@@ -151,6 +151,9 @@ func init() {
 	RegisterCondition("IsBBWBottomBoxPattern", func(ctx *box.TradingContext, s Settings) bool {
 		return cond.IsBBWBottomBoxPattern(ctx, s.BBWBottomLookback)
 	})
+	RegisterCondition("HasDefBoxBeforeWPattern", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.HasDefBoxBeforeWPattern(ctx, s.BBWBottomLookback)
+	})
 
 	// ── 이동평균(MA) 조건 ─────────────────────────────────────
 	RegisterCondition("IsMaGoldenCross5x20", func(ctx *box.TradingContext, s Settings) bool {

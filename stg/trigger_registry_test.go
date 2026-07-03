@@ -189,3 +189,19 @@ func TestEvaluateTriggerSignals_DifferentTriggersIndependent(t *testing.T) {
 		t.Fatalf("독립 트리거 발화 수 = %d, want 2", len(got))
 	}
 }
+
+// EnableREST2 설정 로드/기본값 검증
+func TestEnableREST2Setting(t *testing.T) {
+	if !DefaultSettings().EnableREST2 {
+		t.Error("기본값은 true여야 함 (C# 정합 — strategy1 동작 보존)")
+	}
+	_, s, err := LoadRulesWithSettings("../rules/buy_wdefbox.yaml")
+	if err != nil {
+		t.Fatalf("buy_wdefbox.yaml 로드 실패: %v", err)
+	}
+	if s.EnableREST2 {
+		t.Error("buy_wdefbox.yaml은 EnableREST2: false여야 함")
+	}
+	if len(activeRules) >= 0 { // no-op: 컴파일러 미사용 방지 없음
+	}
+}

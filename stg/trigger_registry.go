@@ -47,6 +47,12 @@ func init() {
 		return cond.IsDefBoxBreakout(ctx)
 	})
 
+	// WBottomBox — 5이평 변곡 W패턴(support→resist→support) 완성 순간.
+	// 마지막 support box 인식 시점이 메인이벤트 (strategy1의 DefBox 돌파와 동일 지위).
+	RegisterTrigger("WBottomBox", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsWBottomBoxCompletedEvent(ctx, s.BBWBottomLookback)
+	})
+
 	RegisterTrigger("BBLowerBreakdown", func(ctx *box.TradingContext, s Settings) bool {
 		return cond.IsBBLowerBreakdownEvent(ctx)
 	})

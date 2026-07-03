@@ -36,6 +36,7 @@ type SellStrategyFile struct {
 // SellSettingsYAML 은 YAML에서 받는 전역 설정 (DefaultSellSettings에 덮어쓴다).
 type SellSettingsYAML struct {
 	MaxHoldingPeriod        *int                  `yaml:"max_holding_period"`
+	MinHoldingPeriod        *int                  `yaml:"min_holding_period"`
 	AutoLiquidateOnExpiry   *bool                 `yaml:"auto_liquidate_on_expiry"`
 	DefaultSellWeight       *float64              `yaml:"default_sell_weight"`
 	SmallRemainingThreshold *float64              `yaml:"small_remaining_threshold"`
@@ -83,6 +84,9 @@ func LoadSellStrategy(path string) (SellSettings, error) {
 	// 글로벌 설정 오버라이드
 	if v := sf.Settings.MaxHoldingPeriod; v != nil {
 		settings.MaxHoldingPeriod = *v
+	}
+	if v := sf.Settings.MinHoldingPeriod; v != nil {
+		settings.MinHoldingPeriod = *v
 	}
 	if v := sf.Settings.AutoLiquidateOnExpiry; v != nil {
 		settings.AutoLiquidateOnExpiry = *v
@@ -153,7 +157,21 @@ func EvaluateSellSignals(ctx *box.TradingContext, pos *box.TradePosition, s Sell
 
 	// ===== Phase 1: 모든 룰 평가 + 신호 수집 =====
 	signals := make([]box.SellSignal, 0, len(activeSellRules))
+	inGracePeriod := s.MinHoldingPeriod > 0 && ctx.Position-pos.BuyPosition < s.MinHoldingPeriod
 	for _, rule := range activeSellRules {
+		// 손절 유예 기간: Critical/Loss 룰은 트리거·트래킹 모두 건너뛴다 (Profit/Technical/Expiry는 정상 평가)
+		if inGracePeriod && isLossCutCategory(rule.Category) {
+			signals = append(signals, box.SellSignal{
+				ConditionName:     rule.Name,
+				Path:              box.SellPath(rule.Path),
+				Priority:          rule.Priority,
+				SignalWeight:      rule.Weight,
+				Category:          rule.Category,
+				CompositeEligible: rule.CompositeEligible,
+				CompositeWeight:   rule.CompositeWeight,
+			})
+			continue
+		}
 		triggered := evaluateRuleConditions(rule, ctx, pos, s)
 		thresholdMet := false
 		if triggered {
@@ -180,6 +198,11 @@ func EvaluateSellSignals(ctx *box.TradingContext, pos *box.TradePosition, s Sell
 	// ===== Phase 2: 5-Path 결정 =====
 	recovery := evaluateRecovery(ctx, pos, s)
 	return makeSellDecision(signals, recovery, ctx, pos, s)
+}
+
+// isLossCutCategory 는 손절 유예(min_holding_period) 대상 카테고리인지 판별.
+func isLossCutCategory(category string) bool {
+	return category == "Critical" || category == "Loss"
 }
 
 // evaluateRuleConditions 는 한 룰의 when/any_of/when_not 평가.

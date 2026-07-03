@@ -3,26 +3,13 @@
 # [트리거 형식] 모든 룰이 trigger: DefBoxBreakout — 돌파 순간 볼린저 원서 3가지 방법으로
 # 돌파의 질을 검증한다. once_per: defbox → 같은 DefBox에서 룰당 1회 발화.
 #
-# Method III (W바텀, 가장 선택적) → Method II (Band Walk) → Method I (역사적 스퀴즈)
+# Method III (W바텀) → Method II (Band Walk) → Method I (역사적 스퀴즈)
+# ※ MIIIb_WBottomBox(Box 시퀀스 W바텀)는 전략 의미가 재정의되어 buy_wdefbox.yaml로 이동 (2026-07-03)
 # 같은 트리거 내 첫 매칭 승리 — 앞 방법이 매칭되면 뒤 방법은 평가하지 않음.
 #
 # 사용법: ./RESTGo stock strategy_study --with-sell rules/buy_bb_pure.yaml
 
 strategies:
-
-  # ── MIIIb: W바텀 (Box 시퀀스 기반 — 가장 엄격) ────────────────────────────
-  # 5이평 기울기 전환점 Box를 사용:
-  # 하단Box(slope-→+, BB하단이탈) → 상단Box(slope+→-) → 하단Box(slope-→+, BB하단위)
-  # Box 구조 자체가 W 형태와 P1-P2 간격을 구조적으로 보장한다.
-  - name: "MIIIb_WBottomBox"
-    trigger: DefBoxBreakout
-    once_per: defbox
-    def_count_min: 1
-    when:
-      - IsBBWBottomBoxPattern
-    when_not:
-      - HasExcessiveUpperWick
-    signal: "MIIIb_W바텀Box"
 
   # ── MIII: W바텀 반전 (Method III — %B 직접 체크) ────────────────────────────
   # 볼린저 원서: 1차 저점(BB하단 이탈) → 중간 반등 → 2차 저점(BB하단 위, 강도 다이버전스)
