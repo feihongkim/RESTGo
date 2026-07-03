@@ -1,3 +1,7 @@
+settings:
+  # 운영 서버 settings.yaml 실효값 정합 (C# 코드 기본값 4.0이 아닌 운영값 채택 — 2026-07-03 결정)
+  DefBoxUpperWickToBodyRatioThreshold: 2.0
+
 # 모든 REST1 전략은 C# BuyConditionProcessor.HasCoreCommonConditions의 Core-3 게이트
 # (IsBullishCandle && HasPullbackOrCorrection && IsMa20NearMa60Complex)를 통과해야 함.
 # 각 룰 when 상단 3개 조건이 이에 해당 (2026-07-03 포팅 정합성 검증 후 복원).
