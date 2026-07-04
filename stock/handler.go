@@ -80,6 +80,10 @@ func Handle(args []string) {
 		study.HandleCombinedScan(args[1:])
 	case "densitygate": // W중력 밀도 게이트 판정 (hannam StrategySignalDaily 기반)
 		handleDensityGate(args[1:])
+	case "mtop_scan": // 상방 M자 패턴 매도 신호 스캔 + 음의 엣지 측정
+		study.HandleMTopScan(args[1:])
+	case "hns_scan": // 해드앤숄더 패턴 매도 신호 스캔 + 음의 엣지 측정
+		study.HandleHNSScan(args[1:])
 	default:
 		fmt.Printf("알 수 없는 stock 명령: %s\n", args[0])
 		fmt.Println("사용법:")
