@@ -78,6 +78,8 @@ func Handle(args []string) {
 		study.HandleWDefBoxScan(args[1:])
 	case "combined_scan": // WD+S1 합성 전략 신호 스캔
 		study.HandleCombinedScan(args[1:])
+	case "densitygate": // W중력 밀도 게이트 판정 (hannam StrategySignalDaily 기반)
+		handleDensityGate(args[1:])
 	default:
 		fmt.Printf("알 수 없는 stock 명령: %s\n", args[0])
 		fmt.Println("사용법:")
@@ -87,6 +89,67 @@ func Handle(args []string) {
 		fmt.Println("  ./RESTGo stock edgetest [markets_csv] [output_json]")
 		fmt.Println("  ./RESTGo stock baseline [markets_csv] [output_json] [strategy_yaml]")
 		fmt.Println("  ./RESTGo stock walkforward <market> [output_json] [strategy_yaml]")
+	}
+}
+
+// handleDensityGate 는 "stock densitygate [일자=오늘] [overlay_yaml]" — 밀도 게이트 판정 출력.
+// 신호 이력은 hannam DB StrategySignalDaily에서 로드. 설정 기본값: rules/overlay_wdefbox.yaml
+// (RESTGO_OVERLAY_RULES 환경변수로 교체 가능).
+func handleDensityGate(args []string) {
+	date := time.Now().Format("20060102")
+	if len(args) >= 1 && args[0] != "" {
+		if _, err := time.Parse("20060102", args[0]); err != nil {
+			fmt.Fprintf(os.Stderr, "오류: 일자 형식은 YYYYMMDD (%s)\n", args[0])
+			return
+		}
+		date = args[0]
+	}
+	cfgPath := "rules/overlay_wdefbox.yaml"
+	if p := os.Getenv("RESTGO_OVERLAY_RULES"); p != "" {
+		cfgPath = p
+	}
+	if len(args) >= 2 && args[1] != "" {
+		cfgPath = args[1]
+	}
+
+	cfg, err := stg.LoadOverlayConfig(cfgPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "오류: %v\n", err)
+		return
+	}
+	db, err := console.MsConn.GetDB("han")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "오류: han DB 연결 실패: %v\n", err)
+		return
+	}
+	history, err := stg.FetchSignalDailyCounts(db, cfg.Strategies)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "오류: %v\n", err)
+		return
+	}
+	gate, err := stg.NewDensityGate(cfg.GateConfig(), history)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "오류: %v\n", err)
+		return
+	}
+	dec, err := gate.Evaluate(date)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "오류: %v\n", err)
+		return
+	}
+
+	fmt.Printf("[densitygate] 설정: %s  전략: %s  이력: %d일\n",
+		cfgPath, strings.Join(cfg.Strategies, ","), len(history))
+	fmt.Printf("[densitygate] 일자 %s  밀도(%d일) %d  임계값(q%.2f/%d년, 표본 %d) %d\n",
+		dec.Date, cfg.WindowDays, dec.Density, cfg.Quantile, cfg.LookbackYears, dec.HistoryDays, dec.Threshold)
+	if dec.Pass {
+		fmt.Printf("[densitygate] 판정: PASS — W신호 진입 허용, 신호당 제안 비중 %.2f%% (equity/%d)\n",
+			dec.SuggestedWeight*100, cfg.SizingK)
+	} else {
+		fmt.Printf("[densitygate] 판정: HOLD — 밀도 미달, W신호 진입 보류 (휴면은 설계임)\n")
+	}
+	if dec.HistoryDays == 0 {
+		fmt.Println("[densitygate] 경고: 임계값 표본이 없음 — 신호 이력 백필/적재 상태를 확인하라")
 	}
 }
 

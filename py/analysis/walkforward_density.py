@@ -34,8 +34,8 @@ import sys
 from collections import defaultdict
 
 from portfolio_sim import load_sell_trades, group_positions, parse_date
-from portfolio_sim_policy import (build_events, compute_densities, poskey, pos_return,
-                                  quantiles, simulate_policy)
+from portfolio_sim_policy import (build_events, compute_densities, compute_slopes, poskey,
+                                  pos_return, quantiles, simulate_policy)
 
 IS_YEARS = 4
 K_FIXED = 50
@@ -51,11 +51,13 @@ def subset(positions, y0, y1):
     return [p for p in positions if y0 <= buy_year(p) <= y1]
 
 
-def signal_split(positions_oos, density, lo):
-    """OOS 신호를 밀도 임계값으로 이분해 품질 비교."""
+def signal_split(positions_oos, density, lo, slopes=None, slope_min=None):
+    """OOS 신호를 (밀도 임계값 [+ 기울기 조건])으로 이분해 품질 비교."""
     pas, fail = [], []
     for p in positions_oos:
-        (pas if density[poskey(p)] >= lo else fail).append(pos_return(p))
+        k = poskey(p)
+        ok = density[k] >= lo and (slope_min is None or slopes[k] >= slope_min)
+        (pas if ok else fail).append(pos_return(p))
     stat = lambda xs: {
         "n": len(xs),
         "mean_net_pct": round(sum(xs) / len(xs), 3) if xs else None,
@@ -66,12 +68,12 @@ def signal_split(positions_oos, density, lo):
                        if pas and fail else None}
 
 
-def sim_return(positions_sub, density, policy, params):
+def sim_return(positions_sub, density, policy, params, slopes=None):
     """부분 기간 시뮬 총수익률(%). 진입 0건이면 0%."""
     if not positions_sub:
         return {"return_pct": 0.0, "entered": 0, "sharpe": 0.0, "final": 1.0}
     ev = build_events(positions_sub)
-    r = simulate_policy(positions_sub, ev, density, policy, params)
+    r = simulate_policy(positions_sub, ev, density, policy, params, slopes=slopes)
     return {"return_pct": round((r["final_capital"] - 1.0) * 100, 2),
             "entered": r["entered_signals"], "sharpe": r["Sharpe"],
             "final": r["final_capital"]}
@@ -109,6 +111,7 @@ def main():
 
     positions = group_positions(load_sell_trades(json_path))
     density = compute_densities(positions)  # 전체 신호 흐름 기준 (causal)
+    slopes = compute_slopes(positions)      # 기울기 = 최근14일 - 이전14일 (causal)
     years = sorted(set(buy_year(p) for p in positions))
     print(f"positions={len(positions)}  years={years[0]}..{years[-1]}")
 
@@ -140,6 +143,12 @@ def main():
                        "signal": signal_split(pos_oos, density, lo_b),
                        "oos_sim": sim_return(pos_oos, density, "density_filter",
                                              {"lo": lo_b, "hi": 10 ** 9, "K": K_FIXED})},
+            # 규칙 C: 규칙 A의 lo + 기울기 상승 조건 (관성 구간 배제) — 2026-07-04 추가
+            "rule_c": {"lo": lo_a, "slope_min": 1,
+                       "signal": signal_split(pos_oos, density, lo_a, slopes, 1),
+                       "oos_sim": sim_return(pos_oos, density, "density_slope_filter",
+                                             {"lo": lo_a, "K": K_FIXED, "slope_min": 1},
+                                             slopes=slopes)},
             "fifo_baseline": sim_return(pos_oos, density, "fifo", {"N": 35}),
         }
         folds.append(fold)
@@ -151,6 +160,9 @@ def main():
         print(f"  B: lo={lo_b:<4} (q{q_b}) diff={sb['diff_pp']}pp "
               f"| 연수익 {fold['rule_b']['oos_sim']['return_pct']}% "
               f"| fifo 연수익 {fold['fifo_baseline']['return_pct']}%")
+        sc = fold["rule_c"]["signal"]
+        print(f"  C: lo={lo_a:<4}+slope≥1 pass n={sc['pass']['n']:<4} diff={sc['diff_pp']}pp "
+              f"| 연수익 {fold['rule_c']['oos_sim']['return_pct']}%")
 
     # ── 집계 ──
     def agg(rule):
@@ -176,6 +188,7 @@ def main():
     summary = {
         "rule_a_fixed_q60": agg("rule_a"),
         "rule_b_is_optimized": agg("rule_b"),
+        "rule_c_q60_slope": agg("rule_c"),
         "fifo_chain_final": round(fifo_chain, 4),
         "fifo_chain_cagr_pct": round((fifo_chain ** (1.0 / len(folds)) - 1) * 100, 2) if folds else 0.0,
         "n_folds": len(folds),

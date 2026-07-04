@@ -48,6 +48,7 @@ RESTGO_BUY_RULES=rules/buy_indicator.yaml RESTGO_SELL_RULES=rules/sell_positive_
 ./RESTGo stock miiib_scan [--foreign-*] [--max N] [--out path]             # MIIIb_WBottomBox 신호 수집
 ./RESTGo stock wdefbox_scan [--foreign-*|--hannam] [--max N] [--candles N] [--out path] [--defbox-only]  # W+DefBox 결합 신호 스캔
 ./RESTGo stock combined_scan [--foreign-*] [--max N] [--out path]          # WD+S1 합성 전략 스캔
+./RESTGo stock densitygate [일자=오늘] [overlay_yaml]                        # W중력 밀도 게이트 판정 (han DB StrategySignalDaily, 기본 rules/overlay_wdefbox.yaml, RESTGO_OVERLAY_RULES로 교체)
 
 # Python 분석 스크립트 실행 (host: /home/feihong/code/REST/RESTGo/venv)
 ./RESTGo py box_chart <종목코드>

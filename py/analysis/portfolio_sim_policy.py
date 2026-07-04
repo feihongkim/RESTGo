@@ -72,6 +72,24 @@ def compute_densities(positions):
     return density
 
 
+def compute_slopes(positions):
+    """포지션별 밀도 기울기 = 최근 14일 신호 수 - 이전 14일 신호 수 (달력일, 당일 제외).
+
+    >0: 군집 형성 중(상승), ≤0: 군집 붕괴/소강(관성 구간). 트레일링 계산이라 causal.
+    근거: 고밀도+상승 +4.90%/승률 73% vs 고밀도+하강 +2.62%/55.9% (2026-07-04 관성 검증).
+    """
+    all_dates = sorted(parse_date(p["buy_date"]) for p in positions)
+    half = DENSITY_WINDOW_DAYS // 2
+    slopes = {}
+    for p in positions:
+        d = parse_date(p["buy_date"])
+        recent = bisect.bisect_left(all_dates, d) - bisect.bisect_left(all_dates, d - timedelta(days=half))
+        older = (bisect.bisect_left(all_dates, d - timedelta(days=half))
+                 - bisect.bisect_left(all_dates, d - timedelta(days=DENSITY_WINDOW_DAYS)))
+        slopes[poskey(p)] = recent - older
+    return slopes
+
+
 def poskey(pos):
     return (pos["shcode"], pos["buy_date"], pos["strategy"])
 
@@ -92,7 +110,7 @@ def quantiles(sorted_vals, qs):
 
 # ──────────────────────────── 정책 ────────────────────────────
 
-def make_target_fn(policy, params, density):
+def make_target_fn(policy, params, density, slopes=None):
     """buy 이벤트에서 (진입 목표금액 or None=스킵)을 결정하는 함수를 반환.
 
     반환 함수 시그니처: fn(equity, cash, n_open, key) -> (target, use_floor)
@@ -132,13 +150,23 @@ def make_target_fn(policy, params, density):
             return equity / K, True
         return fn
 
+    if policy == "density_slope_filter":
+        # 밀도 수준 + 기울기 복합: 밀도 ≥ lo AND 기울기 ≥ slope_min (관성 구간 배제)
+        lo, K, smin = params["lo"], params["K"], params["slope_min"]
+
+        def fn(equity, cash, n_open, key):
+            if density[key] < lo or slopes[key] < smin:
+                return None, False
+            return equity / K, True
+        return fn
+
     raise ValueError(f"unknown policy: {policy}")
 
 
 # ──────────────────────────── 엔진 ────────────────────────────
 
-def simulate_policy(positions, events, density, policy, params, initial_capital=1.0):
-    target_fn = make_target_fn(policy, params, density)
+def simulate_policy(positions, events, density, policy, params, initial_capital=1.0, slopes=None):
+    target_fn = make_target_fn(policy, params, density, slopes)
 
     cash = initial_capital
     open_pos = {}  # key -> [invested, remaining_quantity]
@@ -306,6 +334,11 @@ def battery_configs(density_values_sorted):
         ("density_filter", {"lo": q[0.8], "hi": 10 ** 9, "K": 35}),   # 군집 심부만
         ("density_filter", {"lo": q[0.6], "hi": 10 ** 9, "K": 50}),
         ("density_filter", {"lo": 0, "hi": q[0.4], "K": 35}),         # 소강기만 (대조군)
+        # ── slope(기울기) 조건 — 관성 구간(고밀도+하강) 배제 (2026-07-04 추가) ──
+        ("density_slope_filter", {"lo": q[0.6], "K": 50, "slope_min": 1}),   # 주 후보
+        ("density_slope_filter", {"lo": q[0.6], "K": 35, "slope_min": 1}),
+        ("density_slope_filter", {"lo": q[0.4], "K": 50, "slope_min": 1}),   # 수준 완화, 기울기가 부담
+        ("density_slope_filter", {"lo": 0, "K": 50, "slope_min": 1}),        # 기울기 단독 (ablation)
     ]
 
 
@@ -320,6 +353,7 @@ def main():
     positions = group_positions(trades)
     events = build_events(positions)
     density = compute_densities(positions)
+    slopes = compute_slopes(positions)
     print(f"positions={len(positions)}  events={len(events)}  density_window={DENSITY_WINDOW_DAYS}d")
 
     diag = diagnostic_density(positions, density)
@@ -335,7 +369,7 @@ def main():
 
     results = []
     for policy, params in configs:
-        r = simulate_policy(positions, events, density, policy, params)
+        r = simulate_policy(positions, events, density, policy, params, slopes=slopes)
         results.append(r)
         print(f"\n[{policy} {params}]")
         print(f"  CAGR {r['CAGR_pct']}%  MDD {r['MDD_pct']}%  Sharpe {r['Sharpe']}  "

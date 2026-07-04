@@ -12,6 +12,7 @@
 | `buy_bb_hybrid.yaml` | trigger | (구 strategy_bb_hybrid) Box 구조 + BB 복합 4룰 (SH1~SH4) |
 | `buy_trigger_example.yaml` | trigger | 트리거 문법 예시 3룰 (BB하단복귀 / 스퀴즈돌파 / DefBox재돌파) — 문법 설명 주석 포함 |
 | `buy_crypto_15m.yaml` | per_candle (보류 영역) | (구 strategy3) 가상자산 15분봉 다중 트리거 OR — 추후 보완 예정 |
+| `buy_wdefbox.yaml` | trigger | **W중력 전략.** WBottomBox 트리거 + HasDefBoxBeforeWPattern (DefBox 중력 가설). hannam 16년 검증 +2.55%/승률 60% (zpicture/wdefbox_sell_formal_ab_report.md) |
 
 ## 매도 전략 (RESTGO_SELL_RULES로 선택, 기본 sell_default.yaml)
 
@@ -20,6 +21,13 @@
 | `sell_default.yaml` | (구 sell_strategy1) **기본 매도.** 21룰 + 5-Path 결정 + 부분매도. ※ 매도 로직은 재설계 예정 |
 | `sell_positive_only.yaml` | 양수 수익 구간만 매도하는 변형 |
 | `sell_positive_only_mh25.yaml` | 위 + max_holding 25로 조정 |
+| `sell_wdefbox.yaml` | **W중력 전용 매도.** 익절 2종 + 기간만료(20봉, 연장) — 손절 없음. 손절 무용 스윕 + A/B 검증으로 확정 |
+
+## 포트폴리오 오버레이 (stock densitygate, RESTGO_OVERLAY_RULES로 선택)
+
+| 파일 | 내용 |
+|------|------|
+| `overlay_wdefbox.yaml` | **W중력 밀도 게이트.** 직전 28일 신호 밀도 ≥ 롤링 4년 q60이면 진입 허용(equity/50) — walkforward 15폴드 검증. 매수 룰과 별개인 2단계 포트폴리오 결정 (`stg/overlay_density.go`, hannam StrategySignalDaily) |
 
 ## 그리드 서치 (stock gridtest, 가상자산 — 보류 영역)
 

@@ -1,0 +1,20 @@
+# overlay_wdefbox.yaml — W중력 밀도 게이트(포트폴리오 오버레이) 설정 (2026-07-04)
+#
+# 근거: zpicture/wdefbox_alloc_policy_report.md (배분 정책 배터리) +
+#       zpicture/wdefbox_walkforward_density_report.md (walkforward 15폴드 검증)
+# 규칙: 직전 window_days 달력일 신호 밀도 ≥ (직전 lookback_years년 신호별 밀도의 quantile 분위수)
+#       통과 시 신호당 제안 비중 = 1/sizing_k. 미통과 시 W신호 진입 보류(휴면은 설계임).
+# 신호 이력: hannam DB StrategySignalDaily (일별 신호 수, 백필 완료 2007-12~2026-05)
+#
+# 주의: 이 파일은 매수 룰(buy_wdefbox.yaml)과 별개다 — 매수 룰은 종목별 신호 생산(1단계),
+#       이 게이트는 신호 흐름 기반 포트폴리오 결정(2단계). strategy1 등 타 전략은
+#       밀도-품질 관계가 검증되지 않았으므로(역U자형, zpicture/strategy1_density_report.md)
+#       이 게이트를 적용하지 않는다.
+
+strategies:
+  - W_DefBoxGravity
+
+window_days: 28
+quantile: 0.60
+lookback_years: 4
+sizing_k: 50
