@@ -75,6 +75,17 @@ type SESSellByYear struct {
 	WinRate       float64 `json:"win_rate"`
 }
 
+// SESellTradeRow 는 매도 체결 1건 (sell_trades 배열).
+type SESellTradeRow struct {
+	Strategy     string  `json:"strategy"`
+	Shcode       string  `json:"shcode"`
+	BuyDate      string  `json:"buy_date"`
+	SellDate     string  `json:"sell_date"`
+	HoldingBars  int     `json:"holding_bars"`
+	NetReturnPct float64 `json:"net_return_pct"`
+	Weight       float64 `json:"weight"`
+}
+
 // SESTradeRow 는 발화 trade 1건
 type SESTradeRow struct {
 	Strategy string  `json:"strategy"`
@@ -107,6 +118,7 @@ type StrategyEventStudyOutput struct {
 	Trades        []SESTradeRow        `json:"trades"`                  // 상세 trade (최대 ~5000건/전략)
 	SellStats     []SESSellStats       `json:"sell_stats,omitempty"`    // 5-Path 매도 통계 (--with-sell 전용)
 	SellByYear    []SESSellByYear      `json:"sell_by_year,omitempty"`  // 매도 알파 연도별 분해
+	SellTrades    []SESellTradeRow     `json:"sell_trades,omitempty"`   // 매도 체결 전체 기록 (--with-sell 전용)
 }
 
 // HandleStrategyEventStudy 는 "stock strategy_study [--with-sell] [--upbit-15m|--upbit-30m] [yaml] [out]" 명령 진입점.
@@ -234,6 +246,7 @@ func runStrategyEventStudy(stratPath, outputPath string, withSell bool, mode str
 	yearAcc := make(map[yearKey][]float64)
 	sellAcc := make(map[sellKey][]sellRow)
 	sellYearAcc := make(map[sellYearKey][]float64)
+	sellTradesAcc := []SESellTradeRow{}
 	tradesAcc := make(map[string][]SESTradeRow) // 전략별 개별 trade 기록
 	// 베이스라인 (모든 봉 t+H 수익률 — 호라이즌별)
 	baseAcc := make(map[int][]float64)
@@ -356,6 +369,7 @@ func runStrategyEventStudy(stratPath, outputPath string, withSell bool, mode str
 			// 5-Path 매도 누적 (withSell 모드 + 청산된 포지션만)
 			localSell := make(map[sellKey][]sellRow)
 			localSellYear := make(map[sellYearKey][]float64)
+			localSellTrades := []SESellTradeRow{}
 			if withSell {
 				for _, pos := range result.Positions {
 					if pos == nil || pos.SellPosition < 0 || pos.SellPosition <= pos.BuyPosition {
@@ -397,8 +411,22 @@ func runStrategyEventStudy(stratPath, outputPath string, withSell bool, mode str
 							localSellYear[sellYearKey{"_ALL_", y}] = append(localSellYear[sellYearKey{"_ALL_", y}], net)
 						}
 					}
+
+				// sell_trades dump: 각 SellExecution을 개별 행으로 기록
+				for _, exec := range pos.SellExecutions {
+					netRet := exec.PartialReturnRate - sesRoundTripCost*100.0
+					localSellTrades = append(localSellTrades, SESellTradeRow{
+						Strategy:     pos.StrategyName,
+						Shcode:       shcode,
+						BuyDate:      pos.BuyDate,
+						SellDate:     exec.SellDate,
+						HoldingBars:  exec.HoldingDays,
+						NetReturnPct: netRet,
+						Weight:       exec.Weight,
+					})
 				}
 			}
+		}
 
 			mu.Lock()
 			for k, rs := range localStrat {
@@ -413,6 +441,7 @@ func runStrategyEventStudy(stratPath, outputPath string, withSell bool, mode str
 			for k, rs := range localSellYear {
 				sellYearAcc[k] = append(sellYearAcc[k], rs...)
 			}
+			sellTradesAcc = append(sellTradesAcc, localSellTrades...)
 			for strat, rows := range localTrades {
 				tradesAcc[strat] = append(tradesAcc[strat], rows...)
 			}
@@ -591,6 +620,7 @@ func runStrategyEventStudy(stratPath, outputPath string, withSell bool, mode str
 			})
 		}
 	}
+	out.SellTrades = sellTradesAcc
 
 	if err := os.MkdirAll(dirOf(outputPath), 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "[ses] 디렉토리 생성 실패: %v\n", err)
