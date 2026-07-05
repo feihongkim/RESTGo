@@ -277,4 +277,11 @@ func init() {
 		pending, _, _, _ := cond.GoldenCrossPendingInfo(ctx.CandleList, ctx.Position)
 		return pending
 	})
+
+	// M자(이중천장) 3박스 구조 존재 — 마지막 3개 추세 박스가 R(BB상단 이탈)-S(MA20 위)-R(BB 내부)이고
+	// 마지막 R 인지가 15봉 이내 (level 조건 — DefBox 돌파 실패 short 가설의 겹침 판정용, 2026-07-05)
+	RegisterCondition("HasMTopStructure", func(ctx *box.TradingContext, s Settings) bool {
+		_, _, found := cond.FindBBMTopBoxPattern(ctx, s.BBWBottomLookback)
+		return found
+	})
 }

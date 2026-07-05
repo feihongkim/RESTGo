@@ -55,6 +55,18 @@ func ScanTrigger(candles []*box.Candle, cfg TriggerScanConfig, s Settings) (fire
 		box.CheckAndCreateDefBox(ctx, s.DamOption)
 		candles[i].Curvekey = box.AnalyzeCurvature(ctx)
 
+		// DefBox 추적 상태 갱신 — 엔진 evaluateBuySignals 도입부와 동일 (DefBox 계열
+		// 트리거·조건이 ctx.DefboxIndex/DefboxPrice를 참조하므로 없으면 전부 침묵한다)
+		if ctx.DefChecker != 0 {
+			if idx := findLastDefBoxIndex(ctx.BoxList); idx != -1 && ctx.DefboxIndex != idx {
+				ctx.DefboxIndex = idx
+				ctx.DamChecker = 1
+				ctx.UpdateBoxInfo()
+				ctx.ResetBuySignalPositions()
+				ctx.BuyHelper = ""
+			}
+		}
+
 		// 트리거 평가 (armed는 매 캔들 틱 필수 — 쿨다운 중에도 상태는 갱신)
 		var fired bool
 		if isArmed {

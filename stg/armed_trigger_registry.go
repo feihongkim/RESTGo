@@ -62,6 +62,29 @@ func init() {
 		},
 	})
 
+	// DefBox 돌파 실패(재붕괴) — strategy1의 트리거인 DefBox 돌파(가격+거래대금+ATR 게이트)가 장전,
+	// 유효기간 내 종가가 DefBox 가격 아래로 재붕괴하면 발화. "실패한 돌파"를 short/청산 신호로
+	// 뒤집는 가설 (2026-07-05 사용자). 창 내 재붕괴가 없으면 만료 = 돌파 성공 케이스.
+	RegisterArmedTrigger("DefBoxBreakoutFailure", ArmedTriggerSpec{
+		WindowBars: 20,
+		CheckArm: func(ctx *box.TradingContext, s Settings, newBox bool) (interface{}, bool) {
+			if ctx.DefChecker == 0 || ctx.GetDefBox() == nil {
+				return nil, false
+			}
+			if !checkDefBoxBreakout(ctx, s) {
+				return nil, false
+			}
+			return ctx.GetDefBox().Price, true // 돌파 시점의 박스 가격(스케일)을 상태로
+		},
+		CheckFire: func(ctx *box.TradingContext, s Settings, state interface{}, armPos int) bool {
+			price, _ := state.(float64)
+			if price <= 0 {
+				return false
+			}
+			return ctx.CandleList[ctx.Position].Close < price // 재붕괴 (장전당 1회라 첫 이탈에서만 발화)
+		},
+	})
+
 	// 20이평 눌림 돌파 — 눌림 R→S 구조 완성(support box 인지)이 장전, 양봉 MA20 종가 돌파가 발화.
 	// streak(MA20 연속 상승 요구)는 s.PullbackStreak (기본 0 = +++ 폐지판).
 	RegisterArmedTrigger("MA20PullbackBreakout", ArmedTriggerSpec{
