@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,6 +36,7 @@ func HandleTriggerScan(args []string) {
 	cooldown := 0
 	maxStocks := 0
 	candleCount := 4200
+	upbit := false // --upbit: 암호화폐 15분봉 모드 (TUF DB, BTC/ETH/XRP/SOL — 2026-07-05 분봉 전략 크립토 적용)
 	outPath := ""
 	overrides := map[string]interface{}{}
 
@@ -65,7 +67,14 @@ func HandleTriggerScan(args []string) {
 				for _, kv := range strings.Split(args[i+1], ",") {
 					parts := strings.SplitN(kv, "=", 2)
 					if len(parts) == 2 {
-						overrides[parts[0]] = parts[1]
+						// 숫자로 변환해 저장 — ApplySettingsOverrides의 toInt/toFloat는 문자열을 받지 않는다
+						if iv, err := strconv.Atoi(parts[1]); err == nil {
+							overrides[parts[0]] = iv
+						} else if fv, err := strconv.ParseFloat(parts[1], 64); err == nil {
+							overrides[parts[0]] = fv
+						} else {
+							overrides[parts[0]] = parts[1]
+						}
 					}
 				}
 				i++
@@ -80,6 +89,11 @@ func HandleTriggerScan(args []string) {
 				fmt.Sscanf(args[i+1], "%d", &candleCount)
 				i++
 			}
+		case "--upbit":
+			upbit = true
+			if candleCount == 4200 {
+				candleCount = 310000 // 15분봉 전체 이력 (BTC/ETH/XRP ~30만 봉)
+			}
 		case "--out":
 			if i+1 < len(args) {
 				outPath = args[i+1]
@@ -88,7 +102,7 @@ func HandleTriggerScan(args []string) {
 		}
 	}
 	if trigger == "" {
-		fmt.Println("사용법: ./RESTGo stock trigger_scan --trigger <이름> [--when C1,C2] [--when-not C1,C2] [--cooldown N] [--set K=V] [--max N] [--candles N] [--out path]")
+		fmt.Println("사용법: ./RESTGo stock trigger_scan --trigger <이름> [--when C1,C2] [--when-not C1,C2] [--cooldown N] [--set K=V] [--max N] [--candles N] [--upbit] [--out path]")
 		return
 	}
 	if outPath == "" {
@@ -99,15 +113,24 @@ func HandleTriggerScan(args []string) {
 	stg.ApplySettingsOverrides(&s, overrides)
 	cfg := stg.TriggerScanConfig{Trigger: trigger, When: when, WhenNot: whenNot, CooldownBars: cooldown}
 
-	db, err := console.MsConn.GetDB("han")
+	dbName := "han"
+	if upbit {
+		dbName = "tuf"
+	}
+	db, err := console.MsConn.GetDB(dbName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[trigger_scan] DB 연결 오류: %v\n", err)
 		return
 	}
-	stocks, err := box.FetchHannamStockList(db)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[trigger_scan] 종목 목록 오류: %v\n", err)
-		return
+	var stocks []string
+	if upbit {
+		stocks = []string{"KRW-BTC", "KRW-ETH", "KRW-XRP", "KRW-SOL"} // 장기 이력 보유 4종
+	} else {
+		stocks, err = box.FetchHannamStockList(db)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[trigger_scan] 종목 목록 오류: %v\n", err)
+			return
+		}
 	}
 	if maxStocks > 0 && len(stocks) > maxStocks {
 		stocks = stocks[:maxStocks]
@@ -138,9 +161,19 @@ func HandleTriggerScan(args []string) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			candles, fetchErr := box.FetchCandlesHannam(db, shcode, candleCount)
+			var candles []*box.Candle
+			var fetchErr error
+			if upbit {
+				candles, fetchErr = box.FetchUpbitCandles15m(db, shcode, candleCount)
+			} else {
+				candles, fetchErr = box.FetchCandlesHannam(db, shcode, candleCount)
+			}
 			if fetchErr != nil || len(candles) < 130 {
-				failed.Add(1)
+				if fetchErr != nil && failed.Add(1) <= 3 {
+					fmt.Fprintf(os.Stderr, "[trigger_scan] %s 캔들 조회 실패: %v\n", shcode, fetchErr)
+				} else if fetchErr == nil {
+					failed.Add(1)
+				}
 				return
 			}
 			indicator.PrepareCandles(candles)
@@ -242,6 +275,7 @@ func HandleTriggerScan(args []string) {
 	}
 
 	out := struct {
+		Mode        string               `json:"mode"`
 		Trigger     string               `json:"trigger"`
 		When        []string             `json:"when,omitempty"`
 		WhenNot     []string             `json:"when_not,omitempty"`
@@ -252,7 +286,7 @@ func HandleTriggerScan(args []string) {
 		SignalCount int                  `json:"signal_count"`
 		Stats       []hStat              `json:"stats"`
 		Examples    []TriggerScanExample `json:"examples"`
-	}{trigger, when, whenNot, cooldown, overrides, candleCount, len(stocks), len(examples), stats, examples}
+	}{map[bool]string{true: "upbit-15m", false: "hannam-daily"}[upbit], trigger, when, whenNot, cooldown, overrides, candleCount, len(stocks), len(examples), stats, examples}
 
 	data, _ := json.MarshalIndent(out, "", "  ")
 	if err := os.WriteFile(outPath, data, 0644); err != nil {

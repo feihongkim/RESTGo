@@ -62,4 +62,16 @@ func init() {
 	RegisterTrigger("BBSqueezeBreakout", func(ctx *box.TradingContext, s Settings) bool {
 		return cond.IsBBSqueezeBreakoutEvent(ctx, s.BBSqueezeLookback, s.BBSqueezeWidthThreshold, s.BBBreakoutPercentB)
 	})
+
+	// r_stg 전략6 이식 (2026-07-05, 크립토 15분봉 대상) — 정배열 유지 + 5<20 조정 + 전고점 터치·미돌파.
+	// 명세: zpicture/minute_stg_spec.md §4. 상태 성립 순간(edge)에 발화.
+	RegisterTrigger("Stg6PullbackTouch", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsStg6PullbackTouchEvent(ctx)
+	})
+
+	// r_stg 전략11 크립토 핵심형 (2026-07-05) — 장기 정배열(96봉) 유지 중 60이평 첫 붕괴 순간.
+	// 명세: zpicture/minute_stg_spec.md §6 (세션 의존 조건은 제거·변환).
+	RegisterTrigger("Stg11MA60Breakdown", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsStg11MA60BreakdownEvent(ctx, s.Stg11AlignedBars)
+	})
 }

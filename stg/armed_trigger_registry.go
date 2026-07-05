@@ -85,6 +85,64 @@ func init() {
 		},
 	})
 
+	// Double Bump 재시도 (r_stg 전략3 이식, 2026-07-05) — 거래량 수반 1차 범프(1개월 신고가)가 장전,
+	// 5봉 경과 후 "고점 아래 + 되돌림 35% 회복 + 고점 종가돌파 2회 미만 + 거래대금" 성립일이 발화.
+	// 원본 SQL 코어 충실 이식 (R 후처리 제외조건 미포함 — zpicture/r_stg_catalog.md 2-2 참조).
+	RegisterArmedTrigger("DoubleBumpRetest", ArmedTriggerSpec{
+		WindowBars: 50, // 범프 후 ~50봉 내 (SQL rn2 < 50)
+		CheckArm: func(ctx *box.TradingContext, s Settings, newBox bool) (interface{}, bool) {
+			info, ok := cond.FindDoubleBump(ctx.CandleList, ctx.Position)
+			if !ok {
+				return nil, false
+			}
+			return &doubleBumpState{info: info}, true
+		},
+		CheckFire: func(ctx *box.TradingContext, s Settings, state interface{}, armPos int) bool {
+			st, _ := state.(*doubleBumpState)
+			if st == nil {
+				return false
+			}
+			i := ctx.Position
+			c := ctx.CandleList[i]
+			if c.Close > st.info.High { // 범프 고점 종가 돌파 카운트 (2회 이상이면 실격)
+				st.higherCloses++
+			}
+			if st.higherCloses >= 2 {
+				return false
+			}
+			if i-st.info.BumpPos <= 5 { // 범프 직후 5봉은 발화 금지 (SQL rn2 > 5)
+				return false
+			}
+			return cond.IsDoubleBumpRetestDay(ctx.CandleList, i, st.info)
+		},
+	})
+
+	// Double Bump 2차 돌파 변형 — 같은 장전(1차 범프)에서, 발화를 "범프 고점 첫 종가 돌파"로 정의.
+	// 원본 R은 준비일 스크리닝이지만 전략명(이중 돌파)의 본래 의도는 2차 돌파 진입일 수 있어 함께 측정.
+	RegisterArmedTrigger("DoubleBumpBreakout2", ArmedTriggerSpec{
+		WindowBars: 50,
+		CheckArm: func(ctx *box.TradingContext, s Settings, newBox bool) (interface{}, bool) {
+			info, ok := cond.FindDoubleBump(ctx.CandleList, ctx.Position)
+			if !ok {
+				return nil, false
+			}
+			return &doubleBumpState{info: info}, true
+		},
+		CheckFire: func(ctx *box.TradingContext, s Settings, state interface{}, armPos int) bool {
+			st, _ := state.(*doubleBumpState)
+			if st == nil {
+				return false
+			}
+			i := ctx.Position
+			if ctx.CandleList[i].Close > st.info.High {
+				st.higherCloses++
+				// 첫 번째 종가 돌파 = 2차 돌파 진입 (범프 5봉 이후에만)
+				return st.higherCloses == 1 && i-st.info.BumpPos > 5
+			}
+			return false
+		},
+	})
+
 	// 20이평 눌림 돌파 — 눌림 R→S 구조 완성(support box 인지)이 장전, 양봉 MA20 종가 돌파가 발화.
 	// streak(MA20 연속 상승 요구)는 s.PullbackStreak (기본 0 = +++ 폐지판).
 	RegisterArmedTrigger("MA20PullbackBreakout", ArmedTriggerSpec{
@@ -105,4 +163,10 @@ func init() {
 			return cond.IsMA20BullishBreakout(ctx.CandleList, ctx.Position, s.PullbackStreak)
 		},
 	})
+}
+
+// doubleBumpState 는 DoubleBumpRetest 트리거의 장전 상태.
+type doubleBumpState struct {
+	info         *cond.DoubleBumpInfo
+	higherCloses int // 범프 고점을 종가로 넘은 횟수 (2회 이상 = 실격)
 }
