@@ -88,6 +88,8 @@ func Handle(args []string) {
 		study.HandlePullbackScan(args[1:])
 	case "wgc_scan": // W바텀(BB완화) × 골든크로스 임박 2×2 스캔 + strategy1 GC 후계산
 		study.HandleWGCScan(args[1:])
+	case "trigger_scan": // 범용 트리거×조건 조합 전방수익률 측정 (일반·armed 트리거 모두)
+		study.HandleTriggerScan(args[1:])
 	default:
 		fmt.Printf("알 수 없는 stock 명령: %s\n", args[0])
 		fmt.Println("사용법:")

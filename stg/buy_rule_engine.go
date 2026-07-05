@@ -177,6 +177,10 @@ func applySettingsOverrides(s *Settings, overrides map[string]interface{}) {
 			if i, ok := toInt(v); ok {
 				s.PerCandleCooldownBars = i
 			}
+		case "PullbackStreak":
+			if i, ok := toInt(v); ok {
+				s.PullbackStreak = i
+			}
 		case "ADXTrendThreshold":
 			if f, ok := toFloat64(v); ok {
 				s.ADXTrendThreshold = f

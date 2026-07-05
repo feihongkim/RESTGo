@@ -50,6 +50,7 @@ RESTGO_BUY_RULES=rules/buy_indicator.yaml RESTGO_SELL_RULES=rules/sell_positive_
 ./RESTGo stock combined_scan [--foreign-*] [--max N] [--out path]          # WD+S1 합성 전략 스캔
 ./RESTGo stock densitygate [일자=오늘] [overlay_yaml]                        # W중력 밀도 게이트 판정 (han DB StrategySignalDaily, 기본 rules/overlay_wdefbox.yaml, RESTGO_OVERLAY_RULES로 교체)
 ./RESTGo stock mtop_scan|hns_scan|pullback_scan [--max N] [--candles N] [--out path]  # 패턴 신호 스캔 + 전방수익률 엣지 측정 (3종 모두 기각된 실험 — zpicture/*_report.md 참조, 러너는 재사용용 보존)
+./RESTGo stock trigger_scan --trigger <이름> [--when C1,C2] [--when-not ...] [--cooldown N] [--set K=V]  # 범용 트리거×조건 조합 측정 (일반·armed 트리거, engine-parity 검증됨 — 새 조합 실험의 기본 도구)
 
 # Python 분석 스크립트 실행 (host: /home/feihong/code/REST/RESTGo/venv)
 ./RESTGo py box_chart <종목코드>
