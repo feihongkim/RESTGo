@@ -13,6 +13,8 @@
 | `buy_trigger_example.yaml` | trigger | 트리거 문법 예시 3룰 (BB하단복귀 / 스퀴즈돌파 / DefBox재돌파) — 문법 설명 주석 포함 |
 | `buy_crypto_15m.yaml` | per_candle (보류 영역) | (구 strategy3) 가상자산 15분봉 다중 트리거 OR — 추후 보완 예정 |
 | `buy_wdefbox.yaml` | trigger | **W중력 전략.** WBottomBox 트리거 + HasDefBoxBeforeWPattern (DefBox 중력 가설). hannam 16년 검증 +2.55%/승률 60% (zpicture/wdefbox_sell_formal_ab_report.md) |
+| `buy_wdefbox_gc.yaml` | trigger | W패턴 × 골든크로스 임박(MA60→MA120 수렴). 일봉 단독 결합 이득 중립 — **주봉(거시) 결합 전제 등록** (zpicture/wgc_scan_report.md) |
+| `strategy1_gc.yaml` | on_breakout | strategy1 전 룰에 IsGoldenCrossPending 게이트 추가한 변형. 일봉 단독 무차별 — 주봉 결합 전제 등록. 원본 갱신 시 재생성 필요 |
 
 ## 매도 전략 (RESTGO_SELL_RULES로 선택, 기본 sell_default.yaml)
 
@@ -41,4 +43,5 @@
 
 - **on_breakout** (trigger 미지정): C# DamChecker 상태머신 — DefBox당 게이트 통과 1회만 룰 평가. strategy1 전용.
 - **trigger**: 룰별 메인이벤트(edge)가 발화한 캔들에서만 when/when_not/any_of 평가. `once_per: defbox|cooldown|none`으로 중복 제어. 같은 트리거 그룹 내 첫 매칭 승리. 등록 트리거: `DefBoxBreakout`, `PriceBreakout`, `WBottomBox`, `BBLowerBreakdown`, `BBLowerReentry`, `BBSqueezeBreakout` (`stg/trigger_registry.go`).
+- **armed 트리거** (2026-07-05, `stg/armed_trigger*.go`): 장전→발화 2단계 패턴도 같은 `trigger:` 필드로 사용 가능 — 패턴 완성(장전) 후 유효기간 내 확인 이벤트(발화)에서 룰 평가. 등록: `MTopCollapse`(M자 완성→음양음 붕괴), `HNSNecklineBreak`(오른어깨→넥라인 이탈), `MA20PullbackBreakout`(눌림 R→S→양봉 MA20 돌파, `settings.PullbackStreak`). ※ 3종 모두 단독 엣지 기각된 실험 신호 — 상황 조건과의 조합 실험용. 전용 분석기와 발화 동일성 검증 완료(113종목·2,091신호 불일치 0).
 - **per_candle**: 매 캔들 평가 + 쿨다운 (가상자산 15분봉 전용, 보류 영역).

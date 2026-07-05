@@ -287,19 +287,31 @@ func IsBBWBottomPattern(ctx *box.TradingContext, lookback int) bool {
 // FindBBWBottomBoxPattern 은 IsBBWBottomBoxPattern 과 동일 조건으로 P1/P2 박스 위치도 반환한다.
 // found=false 이면 p1Pos, p2Pos 는 무효.
 func FindBBWBottomBoxPattern(ctx *box.TradingContext, lookback int) (p1Pos, p2Pos int, found bool) {
+	p1Pos, p2Pos, _, found = findBBWBottomBoxPatternOpt(ctx, lookback, true)
+	return p1Pos, p2Pos, found
+}
+
+// FindBBWBottomBoxPatternRelaxed 는 P1 급락 조건(BB 하단 이탈 + 밴드폭 팽창)을 게이트가 아닌
+// 속성으로 반환하는 완화판 (2026-07-05, GC-pending 국면 연구용 — 운영 경로 불변).
+// bbCrash = 엄격판(P1 하단 이탈 + BBW 팽창) 충족 여부.
+func FindBBWBottomBoxPatternRelaxed(ctx *box.TradingContext, lookback int) (p1Pos, p2Pos int, bbCrash, found bool) {
+	return findBBWBottomBoxPatternOpt(ctx, lookback, false)
+}
+
+func findBBWBottomBoxPatternOpt(ctx *box.TradingContext, lookback int, requireBBCrash bool) (p1Pos, p2Pos int, bbCrash, found bool) {
 	pos := ctx.Position
 	candles := ctx.CandleList
 	boxes := ctx.BoxList
 
 	if !hasValidBollinger(candles[pos]) {
-		return 0, 0, false
+		return 0, 0, false, false
 	}
 	startPos := pos - lookback
 	if startPos < 20 {
 		startPos = 20
 	}
 	if startPos >= pos-6 {
-		return 0, 0, false
+		return 0, 0, false, false
 	}
 
 	type slot struct {
@@ -330,30 +342,31 @@ func FindBBWBottomBoxPattern(ctx *box.TradingContext, lookback int) (p1Pos, p2Po
 	const maxP2Gap = 15
 	n := len(slots)
 	if n < 3 {
-		return 0, 0, false
+		return 0, 0, false, false
 	}
 	s3 := slots[n-1]
 	if s3.btype != box.BoxTypeSupport || s3.bbBreach || pos-s3.bpos > maxP2Gap {
-		return 0, 0, false
+		return 0, 0, false, false
 	}
 	s2 := slots[n-2]
 	if s2.btype != box.BoxTypeResistance || s2.bpos >= s3.bpos {
-		return 0, 0, false
+		return 0, 0, false, false
 	}
 	// 상단Box 종가가 MA20 아래여야 함 (여전히 약세 구간임을 확인)
 	// 상단Box 종가가 MA20 아래여야 함 (여전히 약세 구간임을 확인)
 	if c2 := candles[s2.bpos]; c2.Ma20 == 0 || c2.Close >= c2.Ma20 {
-		return 0, 0, false
+		return 0, 0, false, false
 	}
 	s1 := slots[n-3]
-	if s1.btype != box.BoxTypeSupport || s1.bpos >= s2.bpos || !s1.bbBreach {
-		return 0, 0, false
+	if s1.btype != box.BoxTypeSupport || s1.bpos >= s2.bpos {
+		return 0, 0, false, false
 	}
-	// P1 팽창 조건: ① BBW[p1] > BBW[p1-5]  AND  ② BBW[p1] > min(BBW[p1-20:p1]) * 1.2
-	if !isBBWExpanding(candles, s1.bpos) {
-		return 0, 0, false
+	// P1 급락 조건 (BB 하단 이탈 + 밴드폭 팽창): 엄격판은 게이트, 완화판은 속성(bbCrash)
+	bbCrash = s1.bbBreach && isBBWExpanding(candles, s1.bpos)
+	if requireBBCrash && !bbCrash {
+		return 0, 0, false, false
 	}
-	return s1.bpos, s3.bpos, true
+	return s1.bpos, s3.bpos, bbCrash, true
 }
 
 // isBBWExpanding 은 pos 시점에서 볼린저 밴드폭이 팽창 중인지 확인한다.

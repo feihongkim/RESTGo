@@ -66,6 +66,9 @@ func FindHNSPattern(ctx *box.TradingContext, lookback int) (*HNSPattern, bool) {
 		if b.BoxPosition < startPos || b.BoxPosition >= pos+1 {
 			continue
 		}
+		if b.KindOfBox == box.KindDefBox { // DefBox는 패턴 구조에서 제외 (엔진 경로 오염 방지)
+			continue
+		}
 		if b.BoxType != box.BoxTypeSupport && b.BoxType != box.BoxTypeResistance {
 			continue
 		}

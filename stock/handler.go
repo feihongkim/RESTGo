@@ -86,6 +86,8 @@ func Handle(args []string) {
 		study.HandleHNSScan(args[1:])
 	case "pullback_scan": // 20이평 눌림 돌파 매수 신호 스캔 + 양의 엣지 측정
 		study.HandlePullbackScan(args[1:])
+	case "wgc_scan": // W바텀(BB완화) × 골든크로스 임박 2×2 스캔 + strategy1 GC 후계산
+		study.HandleWGCScan(args[1:])
 	default:
 		fmt.Printf("알 수 없는 stock 명령: %s\n", args[0])
 		fmt.Println("사용법:")

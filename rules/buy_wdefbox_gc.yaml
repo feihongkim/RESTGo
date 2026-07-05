@@ -1,0 +1,25 @@
+# buy_wdefbox_gc.yaml — W패턴 × 골든크로스 임박 (2026-07-05 공식 등록)
+#
+# ── 구성 ─────────────────────────────────────────────────────────────
+# 트리거: WBottomBox (buy_wdefbox와 동일한 W바텀 완성 순간 — P1 직전 BB 하단 이탈 포함)
+# 국면: IsGoldenCrossPending — MA60<MA120 역배열 + 간격 20봉 지속 축소 + 간격 ≤3%
+#       = 하락 추세 관성이 소진되어 장기 이평 골든크로스가 임박한 국면
+# 주의: buy_wdefbox와 달리 HasDefBoxBeforeWPattern(DefBox 중력)은 걸지 않는다 —
+#       측정(wgc_scan) 정합: BB급락 W × GC임박 셀 기준.
+#
+# ── 측정 이력 (2026-07-05, zpicture/wgc_scan_report.md) ─────────────
+# 일봉 단독으로는 결합 이득 중립: BB급락 W 중 GC임박은 2.2%(n=169)로 희소하고 edge +0.78%p(t=0.91).
+# 사용자 결정: 주봉(거시) 분석과의 결합을 전제로 공식 전략화 — 향후 주봉 국면 필터가 얹힐 자리.
+#
+# 사용법: RESTGO_BUY_RULES=rules/buy_wdefbox_gc.yaml ./RESTGo stock analyze <종목코드> 250
+
+settings:
+  EnableREST2: false   # W 계열 단독 — REST2/FollowUp 신호(S13~S20) 비활성
+
+strategies:
+  - name: "W_GCPending"
+    trigger: WBottomBox
+    once_per: cooldown
+    when:
+      - IsGoldenCrossPending
+    signal: "W+GC임박매수"

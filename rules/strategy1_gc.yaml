@@ -1,0 +1,179 @@
+# strategy1_gc.yaml — strategy1 × 골든크로스 임박 (2026-07-05 공식 등록)
+#
+# strategy1.yaml 사본에 모든 룰의 when 첫 조건으로 IsGoldenCrossPending을 추가한 변형.
+# (MA60<MA120 역배열 + 간격 20봉 지속 축소 + 간격 ≤3% = 장기 이평 골든크로스 임박 국면)
+# 주의: REST2 FollowUp(S13~S20)은 엔진 내장이라 GC 게이트가 걸리지 않음 — 룰 신호만 게이트됨.
+# 측정 이력: 일봉 단독 결합 이득 무차별 (zpicture/wgc_scan_report.md, diff -0.006%p).
+# 사용자 결정: 주봉(거시) 분석과의 결합을 전제로 공식 전략화.
+# 원본 strategy1.yaml 갱신 시 이 파일도 재생성 필요 (sed로 생성됨).
+
+settings:
+  # 운영 서버 settings.yaml 실효값 정합 (C# 코드 기본값 4.0이 아닌 운영값 채택 — 2026-07-03 결정)
+  DefBoxUpperWickToBodyRatioThreshold: 2.0
+
+# 모든 REST1 전략은 C# BuyConditionProcessor.HasCoreCommonConditions의 Core-3 게이트
+# (IsBullishCandle && HasPullbackOrCorrection && IsMa20NearMa60Complex)를 통과해야 함.
+# 각 룰 when 상단 3개 조건이 이에 해당 (2026-07-03 포팅 정합성 검증 후 복원).
+# any_of의 IsMa20NearMa60Complex는 게이트로 인해 항상 충족되지만 C# 전략별 조건의 1:1 보존을 위해 유지.
+strategies:
+  # ─── SingleDef (DefCount == 1): 엄격한 순서 (더 많은 조건 → 먼저 평가) ───
+
+  # Strategy 3 — S01 + TimingLess (가장 엄격)
+  - name: "S03_SingleDefStrictBuy_Option2"
+    def_count: 1
+    when:
+      - IsGoldenCrossPending   # GC임박 국면 게이트 (2026-07-05, 전 룰 공통)
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
+      - IsCloseNearDefboxPrice
+      - IsMainboxCloserThanCurrentPosition
+      - IsSingleBreakout
+      - IsBoxConditionValid
+      - IsBoxCountBetween2
+      - IsMainboxPriceAboveMa60OrMa120
+      - IsMainboxConditionValid
+      - IsBoxDensityValidByDistribution
+      - MainBoxPositionBasedTiming
+      - MainBoxPositionBasedTimingLess
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    any_of:
+      - HasLowTouchedMa20
+      - IsMa20NearMa60Complex
+    signal: "즉시매수"
+
+  # Strategy 1 — 표준 SingleDef
+  - name: "S01_SingleDefBuy"
+    def_count: 1
+    when:
+      - IsGoldenCrossPending   # GC임박 국면 게이트 (2026-07-05, 전 룰 공통)
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
+      - IsCloseNearDefboxPrice
+      - IsMainboxCloserThanCurrentPosition
+      - IsSingleBreakout
+      - IsBoxConditionValid
+      - IsBoxCountBetween2
+      - IsMainboxPriceAboveMa60OrMa120
+      - IsMainboxConditionValid
+      - IsBoxDensityValidByDistribution
+      - MainBoxPositionBasedTiming
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    any_of:
+      - HasLowTouchedMa20
+      - IsMa20NearMa60Complex
+    signal: "즉시매수"
+
+  # Strategy 23 — 4∩8 교집합 (S01보다 완화: MA/밀도/타이밍 조건 없음)
+  - name: "S23_Intersection_4n8"
+    def_count: 1
+    when:
+      - IsGoldenCrossPending   # GC임박 국면 게이트 (2026-07-05, 전 룰 공통)
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
+      - IsCloseNearDefboxPrice
+      - IsMainboxCloserThanCurrentPosition
+      - IsSingleBreakout
+      - IsBoxConditionValid
+      - IsBoxCountBetween2
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    any_of:
+      - HasLowTouchedMa20
+      - IsMa20NearMa60Complex
+    signal: "즉시매수"
+
+  # Strategy 8 — 거리 조건 완화 (MainboxDistance×2, BoxCount≤5)
+  - name: "S08_SingleDefRelaxedDistanceBuy_Option3"
+    def_count: 1
+    when:
+      - IsGoldenCrossPending   # GC임박 국면 게이트 (2026-07-05, 전 룰 공통)
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
+      - IsCloseNearDefboxPrice
+      - IsMainboxDistanceTwiceOrMore
+      - IsSingleBreakout
+      - IsBoxConditionValid
+      - IsBoxCountBetween5
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    any_of:
+      - HasLowTouchedMa20
+      - IsMa20NearMa60Complex
+    signal: "즉시매수"
+
+  # Strategy 4 — 연약지반 (최완화)
+  - name: "S04_SingleDefWeakFoundationBuy_Option2"
+    def_count: 1
+    when:
+      - IsGoldenCrossPending   # GC임박 국면 게이트 (2026-07-05, 전 룰 공통)
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
+      - IsCloseNearDefboxPrice
+      - IsMainboxCloserThanCurrentPosition
+      - IsBoxCountBetween2
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "연약지반매수"
+
+  # ─── MultiDef (DefCount >= 2): 엄격한 순서 ───
+
+  # Strategy 5 — 표준 MultiDef + 관통
+  - name: "S05_MultiDefStandardBuy_Option2"
+    def_count_min: 2
+    when:
+      - IsGoldenCrossPending   # GC임박 국면 게이트 (2026-07-05, 전 룰 공통)
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
+      - IsCloseNearDefboxPrice
+      - IsMa60StrongerThanMa120By2Percent
+      - IsBoxDensityValidByDistribution
+      - MultiDefDamCountMax2
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "MD즉시매수"
+
+  # Strategy 6 — 완화된 DamCount + 관통 → 대기 신호
+  # (S11과 조건 동일하여 S06가 흡수; 신호: multidef매수대기)
+  - name: "S06_MultiDefRelaxedBuy_Option2"
+    def_count_min: 2
+    when:
+      - IsGoldenCrossPending   # GC임박 국면 게이트 (2026-07-05, 전 룰 공통)
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
+      - IsCloseNearDefboxPrice
+      - IsMultiDefRelaxedDamCondition
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "multidef매수대기"
+
+  # Strategy 10 — 표준 MultiDef, 관통 없음
+  - name: "S10_MultiDefStandardBuy_Option3"
+    def_count_min: 2
+    when:
+      - IsGoldenCrossPending   # GC임박 국면 게이트 (2026-07-05, 전 룰 공통)
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
+      - IsCloseNearDefboxPrice
+      - IsMa60StrongerThanMa120By2Percent
+      - IsBoxDensityValidByDistribution
+      - MultiDefDamCountMax2
+    when_not:
+      - HasExcessiveUpperWick
+    signal: "MD즉시매수"

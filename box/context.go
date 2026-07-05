@@ -48,6 +48,9 @@ type TradingContext struct {
 	// 매 캔들 평가 — 전략별 마지막 발화 포지션 (쿨다운용)
 	LastPerCandleSignalPosition map[string]int
 
+	// Armed(장전→발화) 트리거 상태 저장소 — 트리거명 → 상태 (stg가 소유·해석, 지연 초기화)
+	ArmedTriggerState map[string]interface{}
+
 	// 활성 매수 포지션 리스트 (매수 신호 발생 시 추가, 완전 청산 시 IsActive=false)
 	// 매도 평가는 각 캔들마다 이 리스트를 순회한다 (C# context.ActivePositions 포팅)
 	ActivePositions []*TradePosition

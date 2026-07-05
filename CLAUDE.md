@@ -49,6 +49,7 @@ RESTGO_BUY_RULES=rules/buy_indicator.yaml RESTGO_SELL_RULES=rules/sell_positive_
 ./RESTGo stock wdefbox_scan [--foreign-*|--hannam] [--max N] [--candles N] [--out path] [--defbox-only]  # W+DefBox 결합 신호 스캔
 ./RESTGo stock combined_scan [--foreign-*] [--max N] [--out path]          # WD+S1 합성 전략 스캔
 ./RESTGo stock densitygate [일자=오늘] [overlay_yaml]                        # W중력 밀도 게이트 판정 (han DB StrategySignalDaily, 기본 rules/overlay_wdefbox.yaml, RESTGO_OVERLAY_RULES로 교체)
+./RESTGo stock mtop_scan|hns_scan|pullback_scan [--max N] [--candles N] [--out path]  # 패턴 신호 스캔 + 전방수익률 엣지 측정 (3종 모두 기각된 실험 — zpicture/*_report.md 참조, 러너는 재사용용 보존)
 
 # Python 분석 스크립트 실행 (host: /home/feihong/code/REST/RESTGo/venv)
 ./RESTGo py box_chart <종목코드>
@@ -206,6 +207,7 @@ C# 참조 프로젝트: `ssh feihong@192.168.3.120:/home/feihong/code/REST/RESTG
 - **돌파 게이트** (`stg/analyzer.go` `checkDefBoxBreakout`): 가격 돌파 + 거래대금(`IsVolumeBreakout`) + ATR 모두 충족해야 돌파 인정. 룰 평가는 **돌파 캔들에서만** 1회 수행되고, 이후 캔들은 ShortRange 사후 평가만 한다 (C# BLogic 정렬)
 - **FollowUp/REST2** (`stg/buy_followup.go`): REST2 S13~S16(`DetermineBuySignal`, 후보군1 상태머신) + S17~S20 재진입 처리. S15/S17/S18은 C#과 동일하게 사문(도달 불가) 게이트 보존
 - **트리거(메인이벤트) 아키텍처** (`stg/trigger_registry.go`, 2026-07-03): 룰에 `trigger:` 필드를 지정하면 on_breakout/per_candle 대신 트리거 경로에서 평가된다 — 매 캔들 트리거(edge)를 확인하고 발화한 캔들에서만 when/when_not/any_of 평가. 중복 발화는 `once_per:` (defbox 기본 / cooldown / none)로 제어. 트리거는 반드시 **edge**(발생 순간에만 true)여야 하며 `RegisterTrigger()`로 등록 — level(상태) 조건과 레지스트리가 분리되어 있음. 등록된 트리거: `DefBoxBreakout`(stateless 복합 게이트), `PriceBreakout`(가격만), `WBottomBox`(W패턴 S-R-S 완성 순간), `BBLowerBreakdown`, `BBLowerReentry`, `BBSqueezeBreakout` (edge 함수는 `cond/buy_triggers.go`). 기존 on_breakout 룰(trigger 미지정)은 DamChecker 상태머신 경로 그대로 — batch A/B로 신호 동일성 검증 완료
+- **armed(장전→발화) 트리거** (`stg/armed_trigger.go`·`armed_trigger_registry.go`, 2026-07-05): 상태를 갖는 2단계 패턴(패턴 완성=장전 → 유효기간 내 확인 이벤트=발화)을 `RegisterArmedTrigger()`로 등록하면 일반 트리거와 동일하게 YAML `trigger:`에서 사용 가능. 상태는 `ctx.ArmedTriggerState`에 저장, 룰 필터와 무관하게 매 캔들 틱. 등록: `MTopCollapse`/`HNSNecklineBreak`/`MA20PullbackBreakout`(3종 모두 단독 엣지 기각 — 조합 실험용). `RunArmedTrigger()`는 연구·검증용 단독 실행기 — 전용 분석기(stg/{mpattern,hns,pullback}_analyze.go)와 발화 동일성 검증 완료. 이로써 "패턴(트리거) × 상황 조건(when)"이 코드 없이 YAML로 자유 조합된다
 - `stock/handler.go`가 `stg.LoadStrategy(buyRulesPath())` / `stg.LoadSellStrategyFile(sellRulesPath())`로 로드 — 기본 `rules/strategy1.yaml` / `rules/sell_default.yaml`, 환경변수 `RESTGO_BUY_RULES` / `RESTGO_SELL_RULES`로 교체 가능 (예: `RESTGO_BUY_RULES=rules/buy_indicator.yaml ./RESTGo stock analyze 005930 250`). **매수 룰 로드 실패 시** `stg/analyzer.go`의 하드코딩 fallback 로직이 조용히 사용되므로 주의 (매도 룰 실패는 `[warn]` 출력 후 매도 평가 비활성)
 - **CriticalFailure 임계값** 등 전역 매도 설정은 `sell_default.yaml`에서 YAML로 오버라이드 가능
 

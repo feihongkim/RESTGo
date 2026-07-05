@@ -48,6 +48,9 @@ func FindBBMTopBoxPattern(ctx *box.TradingContext, lookback int) (p1Pos, p2Pos i
 		if b.BoxPosition < startPos || b.BoxPosition >= pos {
 			continue
 		}
+		if b.KindOfBox == box.KindDefBox { // DefBox는 패턴 구조에서 제외 (엔진 경로 오염 방지)
+			continue
+		}
 		wStart := b.BoxPosition - 10
 		if wStart < 0 {
 			wStart = 0

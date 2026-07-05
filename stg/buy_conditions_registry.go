@@ -268,4 +268,13 @@ func init() {
 	RegisterCondition("IsVWAPDeviationBelow", func(ctx *box.TradingContext, s Settings) bool {
 		return cond.IsVWAPDeviationBelow(ctx, s.VWAPDeviationK)
 	})
+
+	// ── 시장 국면 조건 (2026-07-05) ──────────────────────────
+	// 골든크로스 임박: MA60<MA120 + 간격 20봉 지속 축소 + 간격 ≤3%.
+	// 일봉 단독 엣지는 중립(zpicture/wgc_scan_report.md) — 주봉(거시) 분석과의 결합을 전제로
+	// 공식 전략화 등록 (사용자 결정, buy_wdefbox_gc.yaml / strategy1_gc.yaml)
+	RegisterCondition("IsGoldenCrossPending", func(ctx *box.TradingContext, s Settings) bool {
+		pending, _, _, _ := cond.GoldenCrossPendingInfo(ctx.CandleList, ctx.Position)
+		return pending
+	})
 }

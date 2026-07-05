@@ -58,6 +58,9 @@ type Settings struct {
 	// 매 캔들 평가 (per_candle 룰)
 	PerCandleCooldownBars int // 발화 후 재발화 금지 봉 수 (기본 4)
 
+	// armed 트리거 (2026-07-05)
+	PullbackStreak int // MA20PullbackBreakout의 MA20 연속 상승 요구 봉수 (기본 0 = 미적용)
+
 	// EMA 풀백 조건
 	EMA21PullbackLookback int // EMA21 풀백 반등 탐색 구간 (기본 3)
 

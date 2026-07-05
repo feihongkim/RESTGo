@@ -389,6 +389,20 @@ func evaluateTriggerSignals(ctx *box.TradingContext, s Settings, rules []RuleCon
 	triggerFired := map[string]bool{}   // 캔들 내 트리거 메모이즈
 	triggerMatched := map[string]bool{} // 같은 트리거 그룹 내 첫 매칭 승리 (YAML 순서 = 우선순위)
 
+	// armed(장전→발화) 트리거는 룰 필터(once_per/def_count)와 무관하게 매 캔들 틱해야
+	// 장전을 놓치지 않는다 — 룰 평가 전에 시딩 (2026-07-05)
+	for _, rule := range rules {
+		if rule.Trigger == "" {
+			continue
+		}
+		if _, isArmed := armedTriggerRegistry[rule.Trigger]; !isArmed {
+			continue
+		}
+		if _, seen := triggerFired[rule.Trigger]; !seen {
+			triggerFired[rule.Trigger] = tickArmedTrigger(rule.Trigger, ctx, s)
+		}
+	}
+
 	for _, rule := range rules {
 		if rule.Trigger == "" {
 			continue
@@ -429,6 +443,7 @@ func evaluateTriggerSignals(ctx *box.TradingContext, s Settings, rules []RuleCon
 		if !seen {
 			fn, ok := triggerRegistry[rule.Trigger]
 			if !ok {
+				// armed 트리거는 위에서 시딩되므로 여기 도달하면 정말 미등록
 				fmt.Printf("[rule] 미등록 트리거: %s\n", rule.Trigger)
 				triggerFired[rule.Trigger] = false
 				continue
