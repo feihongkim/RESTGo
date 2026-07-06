@@ -291,4 +291,38 @@ func init() {
 	RegisterCondition("IsStg11MA60Breakdown", func(ctx *box.TradingContext, s Settings) bool {
 		return cond.IsStg11MA60BreakdownEvent(ctx, s.Stg11AlignedBars)
 	})
+
+	// ── strategy1 사전평가 복합 조건 (2026-07-06, "돌파 전 선매수" 설계) ──────────
+	// strategy1 돌파일 조건을 시점으로 3분류(zpicture/s1_condition_taxonomy.md)한 뒤,
+	// (a) 시점 불변/진행형 지형 조건만 묶은 것. 등록된 개별 조건을 이름으로 재사용해
+	// 본판(strategy1.yaml)과 의미가 어긋나지 않게 한다. (c) 돌파 얽힘·자동충족 조건은 제외.
+	RegisterCondition("IsS1SetupTerrain", func(ctx *box.TradingContext, s Settings) bool {
+		for _, n := range []string{
+			"IsMainboxCloserThanCurrentPosition", "IsSingleBreakout", "IsBoxConditionValid",
+			"IsBoxCountBetween2", "IsMainboxPriceAboveMa60OrMa120", "IsMainboxConditionValid",
+			"IsBoxDensityValidByDistribution", "MainBoxPositionBasedTiming", "HasPullbackOrCorrection",
+		} {
+			if !conditionRegistry[n](ctx, s) {
+				return false
+			}
+		}
+		return !conditionRegistry["HasExcessiveUpperWick"](ctx, s) // when_not
+	})
+	// (b) 진입 캔들 품질 — 선매수 캔들에 재적용하는 조건
+	RegisterCondition("IsS1EntryQuality", func(ctx *box.TradingContext, s Settings) bool {
+		return conditionRegistry["IsBullishCandle"](ctx, s) && conditionRegistry["IsMa20NearMa60Complex"](ctx, s)
+	})
+
+	// 상방 DefBox 존재 (2026-07-06, W중력 소거 실험) — 가장 최근 DefBox가 현재 종가보다 위.
+	// "BB 하단 이탈 + 상방 중력"만으로 W패턴 없이 충분한지 검증용 (trigger BBLowerBreakdown과 조합).
+	RegisterCondition("HasDefBoxOverhead", func(ctx *box.TradingContext, s Settings) bool {
+		c := ctx.CandleList[ctx.Position]
+		for i := len(ctx.BoxList) - 1; i >= 0; i-- {
+			b := ctx.BoxList[i]
+			if b.KindOfBox == box.KindDefBox && b.BoxPosition < ctx.Position {
+				return b.Price > c.Close
+			}
+		}
+		return false
+	})
 }

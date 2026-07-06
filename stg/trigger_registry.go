@@ -89,4 +89,43 @@ func init() {
 	RegisterTrigger("Stg14Oversold", func(ctx *box.TradingContext, s Settings) bool {
 		return cond.IsStg14OversoldEvent(ctx)
 	})
+
+	// DefBox 선매수 접근 (2026-07-06, 사용자 구상 "돌파 전 박스 아래 매수") —
+	// 미돌파 DefBox의 가격 -δ(기본 2.5%) 밴드에 종가가 아래에서 처음 진입하는 순간.
+	// strategy1 조건들을 when으로 얹어 "돌파 전 선매수"를 측정/전략화하기 위한 트리거.
+	RegisterTrigger("DefBoxApproach", func(ctx *box.TradingContext, s Settings) bool {
+		if ctx.DefChecker == 0 {
+			return false
+		}
+		db := ctx.GetDefBox()
+		pos := ctx.Position
+		if db == nil || pos < 1 || db.Price <= 0 {
+			return false
+		}
+		delta := s.DefBoxApproachPct
+		if delta <= 0 {
+			delta = 0.025
+		}
+		price := db.Price
+		lo := price * (1 - delta)
+		cur := ctx.CandleList[pos]
+		prev := ctx.CandleList[pos-1]
+		if !(cur.Close >= lo && cur.Close < price) { // 접근 밴드 [박스-δ, 박스)
+			return false
+		}
+		if prev.Close >= lo { // edge: 아래에서 처음 진입
+			return false
+		}
+		// 미돌파: 박스 형성 이후 종가 돌파 이력 없어야 (재돌파 상황 배제 — 재돌파 열등함이 기측정됨)
+		start := db.BoxPosition
+		if start < 0 {
+			start = 0
+		}
+		for j := start; j < pos; j++ {
+			if ctx.CandleList[j].Close > price {
+				return false
+			}
+		}
+		return true
+	})
 }

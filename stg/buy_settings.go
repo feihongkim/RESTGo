@@ -67,6 +67,9 @@ type Settings struct {
 	// DefBox 돌파 생존 지연 진입 (2026-07-06)
 	DefBoxSurvivalBars int // DefBoxBreakoutSurvival 생존 확인 봉수 (기본 0 → 5)
 
+	// DefBox 선매수 접근 (2026-07-06)
+	DefBoxApproachPct float64 // DefBoxApproach 접근 밴드 폭 (기본 0 → 0.025 = 박스가 -2.5% 이내)
+
 	// EMA 풀백 조건
 	EMA21PullbackLookback int // EMA21 풀백 반등 탐색 구간 (기본 3)
 

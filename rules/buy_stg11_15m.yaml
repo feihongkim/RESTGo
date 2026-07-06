@@ -9,15 +9,22 @@
 # BTC/ETH/XRP/SOL 15분봉 8.7년: h10(2.5시간) edge +2.06%p (t=3.61), 승률 82.4%, 중앙값 +1.34%.
 # 정배열 요구 봉수 스윕(48/64/96/128) 단조 강건. r_stg 측정 9종 중 유일 생존.
 #
-# ── 청산 ─────────────────────────────────────────────────────────────
-# per_candle 파이프라인의 E1~E4: ATR스탑(1.5×) / 타겟(2.0× 부분) / 트레일링 EMA / 시간청산 16봉.
-# 진입 체결: 다음 봉 시가 (per_candle 규칙).
+# ── 청산 (2026-07-06 그리드 개선값 — zpicture/stg11_grid_report.md) ──────
+# E1 ATR스탑 2.0×(1.5→) / E2 타겟 2.0× 부분 / E3 트레일링 EMA / E4 시간청산 32봉(16→).
+# 근거: 36조합 그리드에서 48/96봉 양 축 일관 개선 (승률 58.8→70.6%, avg +0.81→+1.27%/거래, 96봉 축).
+# 넓은 스탑이 진입 직후 노이즈 스탑아웃을 줄이는 것이 개선 주역. 진입 체결: 다음 봉 시가.
+#
+# ── 검증 이력 요약 (2026-07-06 확정, zpicture/stg11_final_report.md) ──────
+# ✅ 유효: 크립토 15분봉 메이저 4종 (연도·시장 분산 건전)
+# ❌ 기각: 주식 일봉(한국 2026 착시·해외 4시장 불일치) / 터치 트리거 / 알트 확장 / 생존 지연 진입
 #
 # 사용법: ./RESTGo stock baseline "KRW-BTC,KRW-ETH,KRW-XRP,KRW-SOL" zpicture/stg11_baseline.json rules/buy_stg11_15m.yaml
 
 settings:
   EnableREST2: false
-  # Stg11AlignedBars: 96   # 기본값 96 — 완화 실험 시 48/64로 오버라이드 가능
+  ATRStopMultiplier: 2.0   # 그리드 개선값 (기본 1.5)
+  TimeExitBars: 32         # 그리드 개선값 (기본 16)
+  # Stg11AlignedBars: 96   # 기본값 96 — 완화 시 48(연 ~18회, 승률 71%) 오버라이드 가능
 
 strategies:
   - name: "Stg11_MA60Breakdown"
