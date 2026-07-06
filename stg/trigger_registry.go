@@ -74,4 +74,19 @@ func init() {
 	RegisterTrigger("Stg11MA60Breakdown", func(ctx *box.TradingContext, s Settings) bool {
 		return cond.IsStg11MA60BreakdownEvent(ctx, s.Stg11AlignedBars)
 	})
+	// 터치 변형 (2026-07-06) — 종가 붕괴 대신 저가 첫 터치에 발화 (비교 측정용)
+	RegisterTrigger("Stg11MA60FirstTouch", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsStg11MA60FirstTouchEvent(ctx, s.Stg11AlignedBars)
+	})
+
+	// r_stg 전략9·7·14 이식 (2026-07-05, 일봉 대상) — 명세: zpicture/r_stg_catalog.md
+	RegisterTrigger("Stg9ApexPerch", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsStg9ApexPerchEvent(ctx)
+	})
+	RegisterTrigger("Stg7GCAccel", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsStg7GCAccelEvent(ctx)
+	})
+	RegisterTrigger("Stg14Oversold", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsStg14OversoldEvent(ctx)
+	})
 }

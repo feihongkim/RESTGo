@@ -284,4 +284,11 @@ func init() {
 		_, _, found := cond.FindBBMTopBoxPattern(ctx, s.BBWBottomLookback)
 		return found
 	})
+
+	// r_stg 전략11 (2026-07-05) — 트리거와 동일 로직의 조건 등록판.
+	// per_candle 룰(15분봉 크립토 파이프라인, E1~E4 청산)에서 쓰기 위함. edge 성격이라
+	// per_candle 쿨다운과 함께 사실상 발생 순간에만 true.
+	RegisterCondition("IsStg11MA60Breakdown", func(ctx *box.TradingContext, s Settings) bool {
+		return cond.IsStg11MA60BreakdownEvent(ctx, s.Stg11AlignedBars)
+	})
 }

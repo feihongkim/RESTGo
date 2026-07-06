@@ -37,6 +37,8 @@ func HandleTriggerScan(args []string) {
 	maxStocks := 0
 	candleCount := 4200
 	upbit := false // --upbit: 암호화폐 15분봉 모드 (TUF DB, BTC/ETH/XRP/SOL — 2026-07-05 분봉 전략 크립토 적용)
+	foreign := "" // --foreign-us|jp|cn|hk: 해외 일봉 모드 (KIS2 DB — 2026-07-06 전략11 시장 확대)
+	var marketsCSV string // --markets: upbit 모드 마켓 목록 오버라이드 (CSV)
 	outPath := ""
 	overrides := map[string]interface{}{}
 
@@ -94,6 +96,19 @@ func HandleTriggerScan(args []string) {
 			if candleCount == 4200 {
 				candleCount = 310000 // 15분봉 전체 이력 (BTC/ETH/XRP ~30만 봉)
 			}
+		case "--markets":
+			if i+1 < len(args) {
+				marketsCSV = args[i+1]
+				i++
+			}
+		case "--foreign-us":
+			foreign = "us"
+		case "--foreign-jp":
+			foreign = "jp"
+		case "--foreign-cn":
+			foreign = "cn"
+		case "--foreign-hk":
+			foreign = "hk"
 		case "--out":
 			if i+1 < len(args) {
 				outPath = args[i+1]
@@ -117,6 +132,9 @@ func HandleTriggerScan(args []string) {
 	if upbit {
 		dbName = "tuf"
 	}
+	if foreign != "" {
+		dbName = "KIS2"
+	}
 	db, err := console.MsConn.GetDB(dbName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[trigger_scan] DB 연결 오류: %v\n", err)
@@ -125,6 +143,18 @@ func HandleTriggerScan(args []string) {
 	var stocks []string
 	if upbit {
 		stocks = []string{"KRW-BTC", "KRW-ETH", "KRW-XRP", "KRW-SOL"} // 장기 이력 보유 4종
+		if marketsCSV != "" {
+			stocks = strings.Split(marketsCSV, ",")
+		}
+	} else if foreign != "" {
+		prefixes := map[string][]string{
+			"us": {"DNY", "DNA"}, "jp": {"DTS"}, "cn": {"DSZ", "DSH"}, "hk": {"DHK"},
+		}[foreign]
+		stocks, err = box.FetchForeignStockList(db, prefixes)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[trigger_scan] 해외 종목 목록 오류: %v\n", err)
+			return
+		}
 	} else {
 		stocks, err = box.FetchHannamStockList(db)
 		if err != nil {
@@ -165,6 +195,8 @@ func HandleTriggerScan(args []string) {
 			var fetchErr error
 			if upbit {
 				candles, fetchErr = box.FetchUpbitCandles15m(db, shcode, candleCount)
+			} else if foreign != "" {
+				candles, fetchErr = box.FetchCandlesForeign(db, shcode, candleCount)
 			} else {
 				candles, fetchErr = box.FetchCandlesHannam(db, shcode, candleCount)
 			}
@@ -286,7 +318,15 @@ func HandleTriggerScan(args []string) {
 		SignalCount int                  `json:"signal_count"`
 		Stats       []hStat              `json:"stats"`
 		Examples    []TriggerScanExample `json:"examples"`
-	}{map[bool]string{true: "upbit-15m", false: "hannam-daily"}[upbit], trigger, when, whenNot, cooldown, overrides, candleCount, len(stocks), len(examples), stats, examples}
+	}{func() string {
+		if upbit {
+			return "upbit-15m"
+		}
+		if foreign != "" {
+			return "foreign-" + foreign
+		}
+		return "hannam-daily"
+	}(), trigger, when, whenNot, cooldown, overrides, candleCount, len(stocks), len(examples), stats, examples}
 
 	data, _ := json.MarshalIndent(out, "", "  ")
 	if err := os.WriteFile(outPath, data, 0644); err != nil {

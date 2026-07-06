@@ -185,6 +185,10 @@ func applySettingsOverrides(s *Settings, overrides map[string]interface{}) {
 			if i, ok := toInt(v); ok {
 				s.Stg11AlignedBars = i
 			}
+		case "DefBoxSurvivalBars":
+			if i, ok := toInt(v); ok {
+				s.DefBoxSurvivalBars = i
+			}
 		case "ADXTrendThreshold":
 			if f, ok := toFloat64(v); ok {
 				s.ADXTrendThreshold = f

@@ -64,6 +64,9 @@ type Settings struct {
 	// r_stg 전략11 (2026-07-05)
 	Stg11AlignedBars int // Stg11MA60Breakdown 정배열 유지 요구 봉수 (기본 0 → 96)
 
+	// DefBox 돌파 생존 지연 진입 (2026-07-06)
+	DefBoxSurvivalBars int // DefBoxBreakoutSurvival 생존 확인 봉수 (기본 0 → 5)
+
 	// EMA 풀백 조건
 	EMA21PullbackLookback int // EMA21 풀백 반등 탐색 구간 (기본 3)
 

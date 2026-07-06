@@ -1,0 +1,30 @@
+# grid_stg11.yaml — 전략11(에스코넥 크립토) 청산 파라미터 그리드 (2026-07-06)
+# 사용: ./RESTGo stock gridtest rules/grid_stg11.yaml zpicture/grid_stg11_results.json
+#
+# 주의: 96봉 기준 거래 수가 ~34건뿐이라 그리드는 AlignedBars=48(거래 ~150건 예상) 축과 함께
+# 해석해야 함 — 소표본 조합의 1등을 그대로 채택하지 말 것 (다중비교).
+
+base_strategy: rules/buy_stg11_15m.yaml
+markets:
+  - KRW-BTC
+  - KRW-ETH
+  - KRW-XRP
+  - KRW-SOL
+days: 310000
+workers: 8
+
+params:
+  Stg11AlignedBars:
+    - 48
+    - 96
+  ATRStopMultiplier:
+    - 1.0
+    - 1.5
+    - 2.0
+  ATRTargetMultiplier:
+    - 2.0
+    - 3.0
+  TimeExitBars:
+    - 8
+    - 16
+    - 32

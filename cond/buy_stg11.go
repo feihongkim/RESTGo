@@ -21,6 +21,53 @@ const (
 	Stg11ArcMinPct    = 0.002 // MA20 각도 하한 (0.2%)
 )
 
+// IsStg11MA60FirstTouchEvent 는 "장기 정배열 유지 중 60이평 첫 터치" 순간(edge)인지 —
+// 붕괴판(IsStg11MA60BreakdownEvent)과 달리 저가가 60에 닿는 순간(종가 붕괴 여부 무관)에 발화.
+// (2026-07-06 사용자 질문: 트리거를 터치로 당기는 게 나은가 — 비교 측정용 변형)
+func IsStg11MA60FirstTouchEvent(ctx *box.TradingContext, alignedBars int) bool {
+	if alignedBars <= 0 {
+		alignedBars = Stg11AlignedBarsDefault
+	}
+	candles := ctx.CandleList
+	pos := ctx.Position
+	if pos < alignedBars+1 {
+		return false
+	}
+	cur := candles[pos]
+	if cur.Ma60 <= 0 || cur.Low > cur.Ma60 { // 첫 터치: 저가가 60 이하
+		return false
+	}
+	for j := pos - alignedBars; j < pos; j++ {
+		c := candles[j]
+		if c.Ma20 <= 0 || c.Ma60 <= 0 || c.Ma120 <= 0 || !(c.Ma20 > c.Ma60 && c.Ma60 > c.Ma120) {
+			return false
+		}
+		if c.Low <= c.Ma60 { // 직전 구간 무접촉이어야 "첫" 터치
+			return false
+		}
+	}
+	// 붕괴판과 동일한 부가 조건 (관통 카운트·MA20 각도)
+	grid := 0
+	for j := pos - Stg11GridWindow + 1; j <= pos; j++ {
+		c := candles[j]
+		if c.Close > c.Open && c.Low <= c.Ma60 && c.Ma60 > 0 {
+			grid++
+		}
+	}
+	if grid >= Stg11GridMaxFails {
+		return false
+	}
+	ref := candles[pos-Stg11ArcWindow]
+	if ref.Ma20 <= 0 {
+		return false
+	}
+	arc := cur.Ma20 - ref.Ma20
+	if arc < 0 {
+		arc = -arc
+	}
+	return arc/ref.Ma20 >= Stg11ArcMinPct
+}
+
 // IsStg11MA60BreakdownEvent 는 "장기 정배열 유지 중 60이평 첫 붕괴" 순간(edge)인지.
 // alignedBars: 정배열·무접촉 유지 요구 봉수 (0 이하면 기본값 96).
 func IsStg11MA60BreakdownEvent(ctx *box.TradingContext, alignedBars int) bool {

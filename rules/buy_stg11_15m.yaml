@@ -1,0 +1,27 @@
+# buy_stg11_15m.yaml — r_stg 전략11 "에스코넥" 크립토 15분봉 (2026-07-05 실전화 1차)
+#
+# ── 전략 ─────────────────────────────────────────────────────────────
+# 장기간(기본 96봉=24시간) 완전 정배열(20>60>120)을 유지하며 60이평을 저가로도 건드리지
+# 않던 강한 추세가, 60이평을 처음으로 하향 마감하는 순간 매수 (강추세의 첫 60 터치는 사는 자리).
+# 원본: r_stg/전략11 (2016 R, 국내 5분봉) — 세션 의존 조건 제거한 크립토 핵심형.
+#
+# ── 측정 근거 (zpicture/stg11_upbit_scan.json, rstg_phase2_report.md) ──
+# BTC/ETH/XRP/SOL 15분봉 8.7년: h10(2.5시간) edge +2.06%p (t=3.61), 승률 82.4%, 중앙값 +1.34%.
+# 정배열 요구 봉수 스윕(48/64/96/128) 단조 강건. r_stg 측정 9종 중 유일 생존.
+#
+# ── 청산 ─────────────────────────────────────────────────────────────
+# per_candle 파이프라인의 E1~E4: ATR스탑(1.5×) / 타겟(2.0× 부분) / 트레일링 EMA / 시간청산 16봉.
+# 진입 체결: 다음 봉 시가 (per_candle 규칙).
+#
+# 사용법: ./RESTGo stock baseline "KRW-BTC,KRW-ETH,KRW-XRP,KRW-SOL" zpicture/stg11_baseline.json rules/buy_stg11_15m.yaml
+
+settings:
+  EnableREST2: false
+  # Stg11AlignedBars: 96   # 기본값 96 — 완화 실험 시 48/64로 오버라이드 가능
+
+strategies:
+  - name: "Stg11_MA60Breakdown"
+    evaluation: per_candle
+    when:
+      - IsStg11MA60Breakdown
+    signal: "정배열60붕괴매수"

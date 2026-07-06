@@ -165,6 +165,65 @@ func init() {
 	})
 }
 
+func init() {
+	// r_stg 전략2 크립토 핵심형 (2026-07-05) — 완전 역배열(48봉)+120 무접촉 유지 중 120 첫 관통이 장전,
+	// 24봉 내 되돌림(2연속 종가<MA20 + MA5≥(MA20+MA60)/2)이 발화. 명세: minute_stg_spec.md §1.
+	RegisterArmedTrigger("Stg2Inverted120Retreat", ArmedTriggerSpec{
+		WindowBars: 24,
+		CheckArm: func(ctx *box.TradingContext, s Settings, newBox bool) (interface{}, bool) {
+			if cond.IsStg2FirstPierce120(ctx.CandleList, ctx.Position) {
+				return nil, true
+			}
+			return nil, false
+		},
+		CheckFire: func(ctx *box.TradingContext, s Settings, state interface{}, armPos int) bool {
+			return cond.IsStg2RetreatEntry(ctx.CandleList, ctx.Position)
+		},
+	})
+}
+
+func init() {
+	// DefBox 돌파 생존 지연 진입 (2026-07-06, 사용자 가설) — 돌파(장전) 후 N봉(기본 5) 동안
+	// 종가가 박스가 아래로 내려가지 않고 "생존"하면 N봉째에 진입. 실패의 53%가 3일, 75%가
+	// 7일 내 발생하므로 생존 확인으로 다수의 실패를 걸러내고, 그 대가로 초기 상승분을 포기한다.
+	// N은 settings.DefBoxSurvivalBars (--set DefBoxSurvivalBars=N 스윕 가능).
+	RegisterArmedTrigger("DefBoxBreakoutSurvival", ArmedTriggerSpec{
+		WindowBars: 30,
+		CheckArm: func(ctx *box.TradingContext, s Settings, newBox bool) (interface{}, bool) {
+			if ctx.DefChecker == 0 || ctx.GetDefBox() == nil {
+				return nil, false
+			}
+			if !checkDefBoxBreakout(ctx, s) {
+				return nil, false
+			}
+			return &survivalState{price: ctx.GetDefBox().Price}, true
+		},
+		CheckFire: func(ctx *box.TradingContext, s Settings, state interface{}, armPos int) bool {
+			st, _ := state.(*survivalState)
+			if st == nil || st.price <= 0 {
+				return false
+			}
+			if ctx.CandleList[ctx.Position].Close < st.price {
+				st.failed = true // 생존 실패 — 이 장전은 영구 불발
+			}
+			if st.failed {
+				return false
+			}
+			n := s.DefBoxSurvivalBars
+			if n <= 0 {
+				n = 5
+			}
+			return ctx.Position-armPos == n
+		},
+	})
+}
+
+// survivalState 는 DefBoxBreakoutSurvival의 장전 상태.
+type survivalState struct {
+	price  float64 // 돌파 시점 DefBox 가격 (스케일)
+	failed bool    // 생존 확인 중 재붕괴 발생 여부
+}
+
 // doubleBumpState 는 DoubleBumpRetest 트리거의 장전 상태.
 type doubleBumpState struct {
 	info         *cond.DoubleBumpInfo
