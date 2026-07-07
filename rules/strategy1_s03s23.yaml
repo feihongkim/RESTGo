@@ -1,0 +1,64 @@
+# strategy1_s03s23.yaml — strategy1 축소판: 상위 2룰만 (2026-07-06)
+#
+# 근거 (zpicture/strategy1_density_study.json 룰별 분해):
+#   S03: 256신호(연 14), 실현 +2.15%/체결 PF 1.94 — 유일하게 시장 대비 유의(+2.15%p t=2.6)
+#   S23: 273신호(연 15), 실현 +1.12%/체결 PF 1.41 — 빈도 보강용 (사용자 선택)
+#   합계: 529신호(연 29), 가중평균 +1.63%/체결, PF 1.65
+#   반분 검증: 전반부(08~16) +1.70/PF 1.71 vs 후반부(17~26) +1.57/PF 1.61 — 안정
+#   비교: 본판 10룰 전체 +0.77%/체결 PF 1.27 (약한 룰들이 신호 수준 edge ≤0으로 희석)
+# 룰 정의는 strategy1.yaml에서 그대로 복사 (수정 없음 — 순서상 S03이 먼저라 신호 귀속 동일)
+#
+# 매도: rules/sell_s03s23.yaml (전용 — 익절+만료만, A/B 확정 2026-07-06: +3.15%/체결 PF 2.02)
+# 사용: RESTGO_BUY_RULES=rules/strategy1_s03s23.yaml ./RESTGo stock analyze ...
+
+settings:
+  # 운영 서버 settings.yaml 실효값 정합 (strategy1.yaml과 동일)
+  DefBoxUpperWickToBodyRatioThreshold: 2.0
+
+strategies:
+  - name: "S03_SingleDefStrictBuy_Option2"
+    def_count: 1
+    when:
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
+      - IsCloseNearDefboxPrice
+      - IsMainboxCloserThanCurrentPosition
+      - IsSingleBreakout
+      - IsBoxConditionValid
+      - IsBoxCountBetween2
+      - IsMainboxPriceAboveMa60OrMa120
+      - IsMainboxConditionValid
+      - IsBoxDensityValidByDistribution
+      - MainBoxPositionBasedTiming
+      - MainBoxPositionBasedTimingLess
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    any_of:
+      - HasLowTouchedMa20
+      - IsMa20NearMa60Complex
+    signal: "즉시매수"
+
+  # Strategy 1 — 표준 SingleDef
+
+  - name: "S23_Intersection_4n8"
+    def_count: 1
+    when:
+      - IsBullishCandle           # Core-3 공통 게이트 (C# HasCoreCommonConditions)
+      - HasPullbackOrCorrection   # Core-3 공통 게이트
+      - IsMa20NearMa60Complex     # Core-3 공통 게이트
+      - IsCloseNearDefboxPrice
+      - IsMainboxCloserThanCurrentPosition
+      - IsSingleBreakout
+      - IsBoxConditionValid
+      - IsBoxCountBetween2
+      - IsPenetrationOptionValid
+    when_not:
+      - HasExcessiveUpperWick
+    any_of:
+      - HasLowTouchedMa20
+      - IsMa20NearMa60Complex
+    signal: "즉시매수"
+
+  # Strategy 8 — 거리 조건 완화 (MainboxDistance×2, BoxCount≤5)

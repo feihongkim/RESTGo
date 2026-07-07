@@ -43,7 +43,7 @@ func Handle(args []string) {
 	if len(args) == 0 {
 		fmt.Println("사용법:")
 		fmt.Println("  ./RESTGo stock analyze <종목코드> [일수=250]")
-		fmt.Println("  ./RESTGo stock batch [일수=250]")
+		fmt.Println("  ./RESTGo stock batch [일수=250] [출력경로=zpicture/batch_signals.json]")
 		fmt.Println("  ./RESTGo stock gridtest <grid_yaml> [output_json]")
 		fmt.Println("  ./RESTGo stock edgetest [markets_csv] [output_json]")
 		return
@@ -94,7 +94,7 @@ func Handle(args []string) {
 		fmt.Printf("알 수 없는 stock 명령: %s\n", args[0])
 		fmt.Println("사용법:")
 		fmt.Println("  ./RESTGo stock analyze <종목코드> [일수=250]")
-		fmt.Println("  ./RESTGo stock batch [일수=250]")
+		fmt.Println("  ./RESTGo stock batch [일수=250] [출력경로=zpicture/batch_signals.json]")
 		fmt.Println("  ./RESTGo stock gridtest <grid_yaml> [output_json]")
 		fmt.Println("  ./RESTGo stock edgetest [markets_csv] [output_json]")
 		fmt.Println("  ./RESTGo stock baseline [markets_csv] [output_json] [strategy_yaml]")
@@ -288,6 +288,10 @@ func handleBatch(args []string) {
 		}
 		days = n
 	}
+	batchOut := "zpicture/batch_signals.json" // 기본 출력 (py box_chart 등 기존 소비자 호환)
+	if len(args) >= 2 && args[1] != "" {
+		batchOut = args[1] // 일일 운용 배치 등 다중 전략 병행 시 충돌 방지용 (2026-07-07)
+	}
 
 	_ = stg.LoadStrategy(buyRulesPath())
 	if err := stg.LoadSellStrategyFile(sellRulesPath()); err != nil {
@@ -323,10 +327,20 @@ func handleBatch(args []string) {
 
 	fmt.Printf("[%s] 분석 대상: %d 종목  일수: %d\n", console.GenerateTimestampedString(), len(stocks), days)
 
+	type sellEventJSON struct {
+		BuyDate   string  `json:"buy_date"`
+		SellDate  string  `json:"sell_date"`
+		Reason    string  `json:"reason"`
+		Weight    float64 `json:"weight"`
+		NetReturn float64 `json:"net_return_pct"`
+		Holding   int     `json:"holding_days"`
+	}
+
 	type resultItem struct {
 		Shcode  string          `json:"shcode"`
 		Hname   string          `json:"hname"`
 		Signals []stg.BuySignal `json:"signals"`
+		Sells   []sellEventJSON `json:"sells"`
 	}
 
 	type signalJSON struct {
@@ -339,9 +353,10 @@ func handleBatch(args []string) {
 	}
 
 	type resultItemJSON struct {
-		Shcode  string       `json:"shcode"`
-		Hname   string       `json:"hname"`
-		Signals []signalJSON `json:"signals"`
+		Shcode  string          `json:"shcode"`
+		Hname   string          `json:"hname"`
+		Signals []signalJSON    `json:"signals"`
+		Sells   []sellEventJSON `json:"sells"` // 시뮬레이션 포지션의 매도 실행 (2026-07-07 일일 운용 매도 알림용)
 	}
 
 	var results []resultItem
@@ -372,9 +387,19 @@ func handleBatch(args []string) {
 				fmt.Printf("[batch] %d/%d 처리 중...\n", n, int32(len(stocks)))
 			}
 
-			if len(result.BuySignals) > 0 {
+			// 매도 실행 수집 (시뮬레이션 포지션 — "신호대로 매수했다면"의 매도 알림)
+			var sells []sellEventJSON
+			for _, pos := range result.Positions {
+				for _, ex := range pos.SellExecutions {
+					sells = append(sells, sellEventJSON{
+						BuyDate: pos.BuyDate, SellDate: ex.SellDate, Reason: ex.SellReason,
+						Weight: ex.Weight, NetReturn: ex.NetPartialReturn, Holding: ex.HoldingDays,
+					})
+				}
+			}
+			if len(result.BuySignals) > 0 || len(sells) > 0 {
 				mu.Lock()
-				results = append(results, resultItem{s.Shcode, s.Hname, result.BuySignals})
+				results = append(results, resultItem{s.Shcode, s.Hname, result.BuySignals, sells})
 				mu.Unlock()
 			}
 		}(s)
@@ -397,7 +422,7 @@ func handleBatch(args []string) {
 				MainboxDate:  sig.MainboxDate,
 			})
 		}
-		jsonItems = append(jsonItems, resultItemJSON{r.Shcode, r.Hname, sigs})
+		jsonItems = append(jsonItems, resultItemJSON{r.Shcode, r.Hname, sigs, r.Sells})
 	}
 
 	output := map[string]interface{}{
@@ -412,7 +437,7 @@ func handleBatch(args []string) {
 		os.Exit(1)
 	}
 
-	outPath := "zpicture/batch_signals.json"
+	outPath := batchOut
 	if err := os.MkdirAll("zpicture", 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "오류: zpicture 디렉토리 생성 실패: %v\n", err)
 		os.Exit(1)
