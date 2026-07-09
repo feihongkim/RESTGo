@@ -90,6 +90,10 @@ func Handle(args []string) {
 		study.HandleWGCScan(args[1:])
 	case "trigger_scan": // 범용 트리거×조건 조합 전방수익률 측정 (일반·armed 트리거 모두)
 		study.HandleTriggerScan(args[1:])
+	case "listen": // 실시간 큐 소비 모드 — 가상 금일봉 250봉 수신 → 즉시 신호 평가 (2026-07-09)
+		handleListen(args[1:])
+	case "feed": // 발신 모드 — KIS2 일봉을 발신측 스키마로 큐에 발행 (셀프 테스트·패리티 검증용)
+		handleFeed(args[1:])
 	default:
 		fmt.Printf("알 수 없는 stock 명령: %s\n", args[0])
 		fmt.Println("사용법:")
@@ -182,14 +186,15 @@ func handleAnalyze(args []string) {
 
 	fmt.Printf("[%s] 종목: %s  일수: %d\n", console.GenerateTimestampedString(), shcode, days)
 
-	db, err := console.MsConn.GetDB("KIS2")
+	// 국내 일봉 소스: hannam (2026-07-09 사용자 지시 — KIS2 일봉 적재 지연으로 전환)
+	db, err := console.MsConn.GetDB("han")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "오류: KIS2 DB 연결 실패: %v\n", err)
+		fmt.Fprintf(os.Stderr, "오류: han DB 연결 실패: %v\n", err)
 		os.Exit(1)
 	}
 
 	fmt.Printf("[%s] 캔들 조회 중...\n", console.GenerateTimestampedString())
-	candles, err := box.FetchCandles(db, shcode, days)
+	candles, err := box.FetchCandlesHannam(db, shcode, days)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "오류: %v\n", err)
 		os.Exit(1)
@@ -278,6 +283,28 @@ func handleAnalyze(args []string) {
 	}
 }
 
+// fetchStockNames 는 KIS2 KospiCode에서 종목명 맵을 만든다 (이름 전용 — 시세는 hannam 사용).
+// KIS2 접속 실패 시 빈 맵 반환 (이름 없이 진행).
+func fetchStockNames() map[string]string {
+	m := map[string]string{}
+	db, err := console.MsConn.GetDB("KIS2")
+	if err != nil {
+		return m
+	}
+	rows, err := db.Query(`SELECT shrn_iscd, RTRIM(kor_isnm) FROM MS.KospiCode`)
+	if err != nil {
+		return m
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var c, n string
+		if err := rows.Scan(&c, &n); err == nil && c != "" {
+			m[c] = n
+		}
+	}
+	return m
+}
+
 func handleBatch(args []string) {
 	days := 250
 	if len(args) >= 1 {
@@ -298,32 +325,29 @@ func handleBatch(args []string) {
 		fmt.Printf("[warn] 매도 룰 로드 실패 — 매도 평가 비활성: %v\n", err)
 	}
 
-	db, err := console.MsConn.GetDB("KIS2")
+	// 국내 일봉 소스: hannam (2026-07-09 사용자 지시). 종목명은 KIS2 KospiCode에서 보조 조회
+	db, err := console.MsConn.GetDB("han")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "오류: KIS2 DB 연결 실패: %v\n", err)
+		fmt.Fprintf(os.Stderr, "오류: han DB 연결 실패: %v\n", err)
 		os.Exit(1)
 	}
 
-	rows, err := db.Query(`
-		SELECT p.stck_shrn_iscd, ISNULL(RTRIM(k.kor_isnm), p.stck_shrn_iscd) AS hname
-		FROM (SELECT DISTINCT stck_shrn_iscd FROM DM.BP_PeriodPrice WHERE period_type='D') p
-		LEFT JOIN MS.KospiCode k ON k.shrn_iscd = p.stck_shrn_iscd
-		ORDER BY p.stck_shrn_iscd
-	`)
+	codes, err := box.FetchHannamStockList(db)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "오류: 종목 조회 실패: %v\n", err)
 		os.Exit(1)
 	}
+	names := fetchStockNames()
 
 	type stockInfo struct{ Shcode, Hname string }
-	var stocks []stockInfo
-	for rows.Next() {
-		var s stockInfo
-		if err := rows.Scan(&s.Shcode, &s.Hname); err == nil {
-			stocks = append(stocks, s)
+	stocks := make([]stockInfo, 0, len(codes))
+	for _, c := range codes {
+		nm := names[c]
+		if nm == "" {
+			nm = c
 		}
+		stocks = append(stocks, stockInfo{c, nm})
 	}
-	rows.Close()
 
 	fmt.Printf("[%s] 분석 대상: %d 종목  일수: %d\n", console.GenerateTimestampedString(), len(stocks), days)
 
@@ -374,7 +398,7 @@ func handleBatch(args []string) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			candles, err := box.FetchCandles(db, s.Shcode, days)
+			candles, err := box.FetchCandlesHannam(db, s.Shcode, days)
 			if err != nil || len(candles) < 6 {
 				atomic.AddInt32(&processed, 1)
 				return

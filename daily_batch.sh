@@ -14,7 +14,8 @@
 # 주의: 매도 알림은 "분석 창(250일) 신호대로 매수했다면"의 시뮬레이션 포지션 기준 —
 #       실계좌 보유와 다를 수 있음 (부분 진입·게이트 스킵 등). 실보유 대사는 StrategyTradeLog로.
 #
-# cron 예 (host, KIS2 일봉 적재 완료 시각에 맞춰 조정):
+# 캔들 소스: hannam (2026-07-09 전환 — KIS2 일봉 적재 지연). 종목명만 KIS2 KospiCode 보조.
+# cron 예 (host, hannam 일봉 적재 완료 시각에 맞춰 조정):
 #   30 16 * * 1-5  cd /home/feihong/code/REST/RESTGo && ./daily_batch.sh >> zpicture/daily_batch.log 2>&1
 set -uo pipefail
 cd "$(dirname "$0")"
@@ -59,9 +60,10 @@ for name, n in counts.items():
     sql.append("DELETE FROM StrategySignalDaily WHERE strategy='%s' AND trade_date='%s'" % (name, today))
     if n > 0:
         sql.append("INSERT INTO StrategySignalDaily (strategy, trade_date, signal_count) VALUES ('%s','%s',%d)" % (name, today, n))
-sql.append("DELETE FROM StrategyTradeLog WHERE trade_date='%s'" % today)
+# EOD(확정 재계산)만 교체 — LIVE(실시간 실체결 근거)는 절대 건드리지 않음 (2026-07-09 규약)
+sql.append("DELETE FROM StrategyTradeLog WHERE trade_date='%s' AND source='EOD'" % today)
 if rows:
-    sql.append("INSERT INTO StrategyTradeLog (strategy, shcode, hname, event_type, trade_date, reason, weight, net_return_pct, buy_date) VALUES " + ",".join(rows))
+    sql.append("INSERT INTO StrategyTradeLog (strategy, shcode, hname, event_type, trade_date, reason, weight, net_return_pct, buy_date, source) VALUES " + ",".join(r[:-1] + ",'EOD')" for r in rows))
 open('/tmp/daily_batch_load.sql', 'w').write('\n'.join(sql) + '\n')  # 개행 필수 — while read는 개행 없는 마지막 줄을 버림
 print('[적재 준비] 오늘 매수 신호: %s, 이벤트 행: %d' % (counts, len(rows)))
 PY

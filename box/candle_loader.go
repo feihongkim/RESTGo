@@ -3,6 +3,7 @@ package box
 import (
 	"database/sql"
 	"fmt"
+	"time"
 )
 
 // FetchCandles 는 KIS2 DB DM.BP_PeriodPrice 에서 종목 일봉 데이터를 조회합니다.
@@ -165,13 +166,15 @@ func FetchForeignStockList(db *sql.DB, prefixes []string) ([]string, error) {
 // 폴백으로 BP_PeriodPrice 기반 종목 목록을 사용해도 됨 (KIS2 종목과 동일).
 func FetchHannamStockList(db *sql.DB) ([]string, error) {
 	// stock_price_kor_d001에서 DISTINCT SHCODE는 큰 테이블 인덱스 부재로 timeout 위험.
-	// 최근 1개월 범위로 좁혀서 가져옴.
-	rows, err := db.Query(`
+	// 최근 35일 범위로 좁혀서 가져옴 (2026-07-09: 하드코딩 날짜 → 롤링 윈도우 수정 — 운용 전환).
+	to := time.Now().Format("20060102")
+	from := time.Now().AddDate(0, 0, -35).Format("20060102")
+	rows, err := db.Query(fmt.Sprintf(`
 		SELECT DISTINCT SHCODE
 		FROM stock_price_kor_d001
-		WHERE DATE BETWEEN '20260501' AND '20260601' AND STICK_TYPE = 'D001'
+		WHERE DATE BETWEEN '%s' AND '%s' AND STICK_TYPE = 'D001'
 		ORDER BY SHCODE
-	`)
+	`, from, to))
 	if err != nil {
 		return nil, fmt.Errorf("hannam 종목 목록 조회 실패: %w", err)
 	}

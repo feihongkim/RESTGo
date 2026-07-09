@@ -262,6 +262,32 @@ func (s *rabbitMQSession) Receive(queueName string, msgChan chan<- []byte) error
 	return nil
 }
 
+// AddConsumerChannel 은 외부 발행자가 만든 기존 큐를 소비하기 위한 채널을 연다 (2026-07-09 listen 모드).
+// QueueDeclarePassive로 존재 확인만 하므로 큐 속성(durable 등)과 무관하게 붙을 수 있다.
+// 주의: 재연결 시 recreateChannels가 능동 declare를 시도하므로, durable 큐 소비 중 재연결이 나면
+// 속성 충돌로 실패할 수 있다 — listen 모드는 그 경우 재기동이 필요하다.
+func (s *rabbitMQSession) AddConsumerChannel(queueName string) error {
+	ch, err := s.Conn.Channel()
+	if err != nil {
+		return fmt.Errorf("채널 생성 실패: %w", err)
+	}
+	if _, err := ch.QueueDeclarePassive(queueName, false, false, false, false, nil); err != nil {
+		// durable 큐 가능성 — 새 채널로 durable=true 재시도 (passive는 존재 확인이 목적)
+		ch2, err2 := s.Conn.Channel()
+		if err2 != nil {
+			return fmt.Errorf("채널 재생성 실패: %w", err2)
+		}
+		if _, err3 := ch2.QueueDeclarePassive(queueName, true, false, false, false, nil); err3 != nil {
+			return fmt.Errorf("큐 %s 존재 확인 실패: %v / %v", queueName, err, err3)
+		}
+		ch = ch2
+	}
+	s.mu.Lock()
+	s.Channels[queueName] = ch
+	s.mu.Unlock()
+	return nil
+}
+
 // SendStr 는 문자열 메시지를 큐에 전송하는 간편 함수 (자동 로그 포함)
 func SendStr(queueName string, message string) error {
 	msgBytes := []byte(message)
