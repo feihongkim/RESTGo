@@ -288,6 +288,13 @@ func (s *rabbitMQSession) AddConsumerChannel(queueName string) error {
 	return nil
 }
 
+// NotifyConnClose 는 RabbitMQ 연결 종료 이벤트 채널을 반환한다 (2026-07-09, listen 상시 가동용).
+// 상시 데몬은 이 채널 수신 시 즉시 비정상 종료해 systemd 등의 재기동에 맡기는 것이 안전하다
+// (내부 재연결 로직은 소비자 채널까지는 복구하지 못한다).
+func (s *rabbitMQSession) NotifyConnClose() <-chan *amqp.Error {
+	return s.Conn.NotifyClose(make(chan *amqp.Error, 1))
+}
+
 // SendStr 는 문자열 메시지를 큐에 전송하는 간편 함수 (자동 로그 포함)
 func SendStr(queueName string, message string) error {
 	msgBytes := []byte(message)

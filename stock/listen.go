@@ -182,6 +182,7 @@ func handleListen(args []string) {
 	// ── 메인 루프 ─────────────────────────────────────────────────────
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	connClosed := console.RabbitMQSession.NotifyConnClose() // 끊기면 즉시 종료 → 슈퍼바이저 재기동
 	nMsg, nSkip := 0, 0
 	fmt.Printf("[listen] 대기 중 — 결과: 콘솔%s%s (Ctrl+C 종료)\n",
 		map[bool]string{true: " + 큐 " + outQueue, false: ""}[useOut],
@@ -192,6 +193,10 @@ func handleListen(args []string) {
 		case <-stop:
 			fmt.Printf("\n[listen] 종료 — 메시지 %d건 처리 (스킵 %d), 이벤트 %d건\n", nMsg, nSkip, nEvents)
 			return
+		case amqpErr := <-connClosed:
+			// 소비자 채널은 자동 복구가 안 되므로 좀비로 남지 않게 비정상 종료 (systemd Restart가 재기동)
+			fmt.Fprintf(os.Stderr, "[listen] RabbitMQ 연결 끊김: %v — 재기동 필요, 종료(1)\n", amqpErr)
+			os.Exit(1)
 		case body := <-msgChan:
 			msg, candles, err := parseVirtualMsg(body)
 			if err != nil {

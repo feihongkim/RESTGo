@@ -1,0 +1,26 @@
+# RESTGo 실시간 listen 데몬 systemd 유닛 (2026-07-09)
+# 설치 (host white에서):
+#   sudo cp deploy/restgo-listen.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now restgo-listen
+# 상태/로그:
+#   systemctl status restgo-listen
+#   tail -f /home/feihong/code/REST/RESTGo/zpicture/listen.log
+[Unit]
+Description=RESTGo realtime listen daemon (CMST_st2 -> signals)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=feihong
+WorkingDirectory=/home/feihong/code/REST/RESTGo
+ExecStart=/home/feihong/code/REST/RESTGo/RESTGo stock listen
+Restart=always
+RestartSec=10
+# 연결 끊김 시 데몬이 스스로 exit(1) → 여기서 재기동 (좀비 방지 설계)
+StandardOutput=append:/home/feihong/code/REST/RESTGo/zpicture/listen.log
+StandardError=append:/home/feihong/code/REST/RESTGo/zpicture/listen.log
+
+[Install]
+WantedBy=multi-user.target
