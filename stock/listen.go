@@ -109,27 +109,36 @@ func handleListen(args []string) {
 		fmt.Printf("[listen] 전략 %s: 매수 %s (%d룰) + 매도 %s\n", p.label, p.buyPath, len(rules), p.sellPath)
 	}
 
-	// ── 밀도 게이트 (W중력 전용) — 당일 제외 설계이므로 기동 시 1회 판정 ──
-	today := time.Now().Format("20060102")
+	// ── 밀도 게이트 (W중력 전용) — 당일 제외 설계라 하루 1회 판정이면 충분하지만,
+	// 상시 데몬은 날짜가 바뀌므로 날짜 변경 시 자동 재판정한다 (이력도 재조회 —
+	// daily_batch가 밤사이 갱신한 신호 수 반영. 2026-07-10 상시 가동 대응).
 	gateNote := "게이트 판정 불가"
-	gatePass := false
-	if cfg, err := stg.LoadOverlayConfig("rules/overlay_wdefbox.yaml"); err == nil {
-		if hanDB, err := console.MsConn.GetDB("han"); err == nil {
-			if hist, err := stg.FetchSignalDailyCounts(hanDB, cfg.Strategies); err == nil {
-				if gate, err := stg.NewDensityGate(cfg.GateConfig(), hist); err == nil {
-					if dec, err := gate.Evaluate(today); err == nil {
-						gatePass = dec.Pass
-						verdict := "HOLD"
-						if dec.Pass {
-							verdict = "PASS"
+	gateDate := ""
+	refreshGate := func() {
+		today := time.Now().Format("20060102")
+		if today == gateDate {
+			return
+		}
+		gateDate = today
+		gateNote = "게이트 판정 불가"
+		if cfg, err := stg.LoadOverlayConfig("rules/overlay_wdefbox.yaml"); err == nil {
+			if hanDB, err := console.MsConn.GetDB("han"); err == nil {
+				if hist, err := stg.FetchSignalDailyCounts(hanDB, cfg.Strategies); err == nil {
+					if gate, err := stg.NewDensityGate(cfg.GateConfig(), hist); err == nil {
+						if dec, err := gate.Evaluate(today); err == nil {
+							verdict := "HOLD"
+							if dec.Pass {
+								verdict = "PASS"
+							}
+							gateNote = fmt.Sprintf("%s (밀도 %d / 임계 %d)", verdict, dec.Density, dec.Threshold)
 						}
-						gateNote = fmt.Sprintf("%s (밀도 %d / 임계 %d)", verdict, dec.Density, dec.Threshold)
 					}
 				}
 			}
 		}
+		fmt.Printf("[listen] W중력 밀도 게이트 (%s): %s\n", gateDate, gateNote)
 	}
-	fmt.Printf("[listen] W중력 밀도 게이트 (%s): %s\n", today, gateNote)
+	refreshGate()
 
 	if useOut {
 		if err := console.RabbitMQSession.AddChannelAndQueue(outQueue); err != nil {
@@ -198,6 +207,7 @@ func handleListen(args []string) {
 			fmt.Fprintf(os.Stderr, "[listen] RabbitMQ 연결 끊김: %v — 재기동 필요, 종료(1)\n", amqpErr)
 			os.Exit(1)
 		case body := <-msgChan:
+			refreshGate() // 날짜 변경 시에만 실제 재판정
 			msg, candles, err := parseVirtualMsg(body)
 			if err != nil {
 				nSkip++
@@ -225,7 +235,6 @@ func handleListen(args []string) {
 						TradeDate: lastDate, Reason: sig.Reason, Weight: 1.0, AsOf: msg.AsOf}
 					if p.label == "W_DefBoxGravity" {
 						e.Gate = gateNote
-						_ = gatePass
 					}
 					emit(e)
 				}
