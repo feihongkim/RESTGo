@@ -109,36 +109,55 @@ func handleListen(args []string) {
 		fmt.Printf("[listen] 전략 %s: 매수 %s (%d룰) + 매도 %s\n", p.label, p.buyPath, len(rules), p.sellPath)
 	}
 
-	// ── 밀도 게이트 (W중력 전용) — 당일 제외 설계라 하루 1회 판정이면 충분하지만,
-	// 상시 데몬은 날짜가 바뀌므로 날짜 변경 시 자동 재판정한다 (이력도 재조회 —
-	// daily_batch가 밤사이 갱신한 신호 수 반영. 2026-07-10 상시 가동 대응).
-	gateNote := "게이트 판정 불가"
-	gateDate := ""
-	refreshGate := func() {
-		today := time.Now().Format("20060102")
-		if today == gateDate {
-			return
-		}
-		gateDate = today
-		gateNote = "게이트 판정 불가"
-		if cfg, err := stg.LoadOverlayConfig("rules/overlay_wdefbox.yaml"); err == nil {
-			if hanDB, err := console.MsConn.GetDB("han"); err == nil {
-				if hist, err := stg.FetchSignalDailyCounts(hanDB, cfg.Strategies); err == nil {
-					if gate, err := stg.NewDensityGate(cfg.GateConfig(), hist); err == nil {
-						if dec, err := gate.Evaluate(today); err == nil {
-							verdict := "HOLD"
-							if dec.Pass {
-								verdict = "PASS"
-							}
-							gateNote = fmt.Sprintf("%s (밀도 %d / 임계 %d)", verdict, dec.Density, dec.Threshold)
+	// ── 밀도 게이트 (W중력 전용) — **메시지의 봉 날짜 기준** 판정 (2026-07-10 아키텍처 확정:
+	// RESTGo는 순수 로직 엔진 — 백테스트/실시간 구분 없이 신호가 속한 날짜의 게이트를 첨부하고,
+	// 실주문 여부·수량은 Main Controller가 결정한다). 게이트가 당일 제외 설계라 과거 임의
+	// 날짜도 결정적으로 판정 가능. 이력은 벽시계 날짜 변경 시 재조회(daily_batch 야간 갱신 반영).
+	// 판정은 컨트롤러가 파싱 없이 쓰도록 구조화 필드(gate_pass/suggested_weight)로도 싣는다.
+	type gateInfo struct {
+		note string   // 사람용: "PASS (밀도 84 / 임계 81)"
+		pass *bool    // 기계용 (판정 불가 시 nil)
+		sw   float64  // 제안 비중 (equity 대비, PASS 시에만 >0)
+	}
+	var gate *stg.DensityGate
+	gateCache := map[string]gateInfo{} // 봉날짜 → 판정
+	gateHistDate := ""
+	gateFor := func(barDate string) gateInfo {
+		if today := time.Now().Format("20060102"); today != gateHistDate {
+			gateHistDate = today
+			gate = nil
+			gateCache = map[string]gateInfo{}
+			if cfg, err := stg.LoadOverlayConfig("rules/overlay_wdefbox.yaml"); err == nil {
+				if hanDB, err := console.MsConn.GetDB("han"); err == nil {
+					if hist, err := stg.FetchSignalDailyCounts(hanDB, cfg.Strategies); err == nil {
+						if g, err := stg.NewDensityGate(cfg.GateConfig(), hist); err == nil {
+							gate = g
 						}
 					}
 				}
 			}
 		}
-		fmt.Printf("[listen] W중력 밀도 게이트 (%s): %s\n", gateDate, gateNote)
+		if gi, ok := gateCache[barDate]; ok {
+			return gi
+		}
+		gi := gateInfo{note: "게이트 판정 불가"}
+		if gate != nil {
+			if dec, err := gate.Evaluate(barDate); err == nil {
+				verdict := "HOLD"
+				if dec.Pass {
+					verdict = "PASS"
+					gi.sw = dec.SuggestedWeight
+				}
+				p := dec.Pass
+				gi.pass = &p
+				gi.note = fmt.Sprintf("%s (밀도 %d / 임계 %d)", verdict, dec.Density, dec.Threshold)
+			}
+		}
+		gateCache[barDate] = gi
+		return gi
 	}
-	refreshGate()
+	fmt.Printf("[listen] W중력 밀도 게이트 (오늘 %s): %s — 이벤트에는 각 봉 날짜 기준 판정이 첨부됨\n",
+		time.Now().Format("20060102"), gateFor(time.Now().Format("20060102")).note)
 
 	if useOut {
 		if err := console.RabbitMQSession.AddChannelAndQueue(outQueue); err != nil {
@@ -166,10 +185,13 @@ func handleListen(args []string) {
 		Hname     string  `json:"hname"`
 		TradeDate string  `json:"trade_date"`
 		Reason    string  `json:"reason"`
-		Weight    float64 `json:"weight"`
+		Weight    float64 `json:"weight"`               // 로직 결론: 보유 대비 매매 비율 (매수 1.0=전량 진입, 매도 0.5=절반)
+		Price     float64 `json:"price,omitempty"`      // 신호 캔들 종가 (원, 참고용)
 		NetReturn float64 `json:"net_return_pct,omitempty"`
 		BuyDate   string  `json:"buy_date,omitempty"`
-		Gate      string  `json:"gate,omitempty"` // W중력 BUY에만
+		Gate      string  `json:"gate,omitempty"`       // 사람용 문자열 (W중력 BUY에만)
+		GatePass  *bool   `json:"gate_pass,omitempty"`  // 기계용 판정 (W중력 BUY에만)
+		SuggWt    float64 `json:"suggested_weight,omitempty"` // 게이트 PASS 시 제안 비중 (equity 대비, 예 0.02)
 		AsOf      string  `json:"as_of"`
 	}
 	nEvents := 0
@@ -207,7 +229,6 @@ func handleListen(args []string) {
 			fmt.Fprintf(os.Stderr, "[listen] RabbitMQ 연결 끊김: %v — 재기동 필요, 종료(1)\n", amqpErr)
 			os.Exit(1)
 		case body := <-msgChan:
-			refreshGate() // 날짜 변경 시에만 실제 재판정
 			msg, candles, err := parseVirtualMsg(body)
 			if err != nil {
 				nSkip++
@@ -232,9 +253,11 @@ func handleListen(args []string) {
 						continue
 					}
 					e := outEvent{Type: "BUY", Strategy: p.label, Shcode: msg.Shcode, Hname: msg.Hname,
-						TradeDate: lastDate, Reason: sig.Reason, Weight: 1.0, AsOf: msg.AsOf}
+						TradeDate: lastDate, Reason: sig.Reason, Weight: 1.0,
+						Price: candles[len(candles)-1].CloseOrigin, AsOf: msg.AsOf}
 					if p.label == "W_DefBoxGravity" {
-						e.Gate = gateNote
+						gi := gateFor(lastDate) // 봉 날짜 시점의 게이트 (백테스트 정합)
+						e.Gate, e.GatePass, e.SuggWt = gi.note, gi.pass, gi.sw
 					}
 					emit(e)
 				}
@@ -245,6 +268,7 @@ func handleListen(args []string) {
 						}
 						emit(outEvent{Type: "SELL", Strategy: p.label, Shcode: msg.Shcode, Hname: msg.Hname,
 							TradeDate: lastDate, Reason: ex.SellReason, Weight: ex.Weight,
+							Price: candles[len(candles)-1].CloseOrigin,
 							NetReturn: ex.NetPartialReturn, BuyDate: pos.BuyDate, AsOf: msg.AsOf})
 					}
 				}
