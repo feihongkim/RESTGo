@@ -84,7 +84,18 @@ func init() {
 		log.Fatalf("var DB 연결 실패: %v", err)
 	}
 	if err := MsConn.EnsureConnection("KIS2"); err != nil {
-		log.Fatalf("KIS2 DB 연결 실패: %v", err)
+		if os.Getenv("RESTGO_DEGRADE_KIS2") == "true" {
+			log.Printf("KIS2 DB 연결 실패, tuf 서버로 폴백 시도: %v", err)
+			// 2026-07-11: KIS2 기본 서버 장애 → tuf 서버 주소 + KIS2 데이터베이스명으로 폴백
+			if fallbackErr := MsConn.initDBWithParams("KIS2", EnvTUF.MSSQL_ADDR, EnvKIS.MSSQL_DBKIS); fallbackErr != nil {
+				log.Printf("KIS2 tuf 폴백도 실패 — KIS2 의존 기능 비활성: %v", fallbackErr)
+				MsConn.SetUnavailable("KIS2")
+			} else {
+				log.Printf("KIS2 tuf 폴백 연결 성공 — 정상 운영")
+			}
+		} else {
+			log.Fatalf("KIS2 DB 연결 실패: %v", err)
+		}
 	}
 	// TUF DB 연결 (비필수: 15분봉 암호화폐 분석 기능에만 사용)
 	if err := MsConn.EnsureConnection("tuf"); err != nil {

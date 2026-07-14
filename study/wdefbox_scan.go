@@ -36,6 +36,12 @@ type WDefBoxExample struct {
 	MA200AtSignal float64 `json:"ma200_at_signal,omitempty"` // 원본가 MA200 (0이면 미계산)
 	RSI14AtSignal float64 `json:"rsi14_at_signal,omitempty"` // RSI14
 	CloseAtSignal float64 `json:"close_at_signal,omitempty"` // 원본 종가
+	// ── 50/50 분할진입 trade 상세 (WD 엄격판: DefBox돌파 있는 신호만) ──
+	EntryPrice2     float64 `json:"entry_price2,omitempty"`      // 2차 진입가 (돌파일 원본 종가)
+	ExitDate        string  `json:"exit_date,omitempty"`         // 청산일 (W신호+20거래일)
+	ExitPrice       float64 `json:"exit_price,omitempty"`        // 청산가 (원본 종가)
+	TradeReturn5050 *float64 `json:"trade_return_5050,omitempty"` // 50:50 분할진입 수익률 (비용 전)
+	HoldingDays     int     `json:"holding_days,omitempty"`      // 보유 거래일
 }
 
 // HandleWDefBoxScan 은 W패턴+DefBox 결합 신호를 스캔한다.
@@ -196,6 +202,23 @@ func HandleWDefBoxScan(args []string) {
 				ex.CloseAtSignal = candles[sig.Pos].CloseOrigin
 				ex.MA200AtSignal = candles[sig.Pos].Ma200Origin
 				ex.RSI14AtSignal = candles[sig.Pos].RSI
+
+				// ── 50/50 분할진입 trade 상세 계산 ──
+				if sig.DefBoxBreakPos > 0 && sig.DefBoxBreakPos < n && sig.Pos+20 < n {
+					entry1 := candles[sig.Pos].CloseOrigin
+					entry2 := candles[sig.DefBoxBreakPos].CloseOrigin
+					exitPos := sig.Pos + 20
+					exitPrice := candles[exitPos].CloseOrigin
+					ex.EntryPrice2 = entry2
+					ex.ExitDate = candles[exitPos].Date
+					ex.ExitPrice = exitPrice
+					ex.HoldingDays = 20
+					avgEntry := (entry1 + entry2) / 2.0
+					if avgEntry > 0 {
+						ret := (exitPrice - avgEntry) / avgEntry
+						ex.TradeReturn5050 = &ret
+					}
+				}
 
 				// DefBox 돌파 기준 forward return
 				if sig.DefBoxBreakPos > 0 && sig.DefBoxBreakPos < n {

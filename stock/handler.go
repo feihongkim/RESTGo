@@ -94,6 +94,10 @@ func Handle(args []string) {
 		handleListen(args[1:])
 	case "feed": // 발신 모드 — KIS2 일봉을 발신측 스키마로 큐에 발행 (셀프 테스트·패리티 검증용)
 		handleFeed(args[1:])
+	case "paper_wd": // B슬리브 WD Paper 트레이딩 — 4국(3시장) 일일 스캔 + 알림 + 원장
+		HandlePaperWD(args[1:])
+	case "paper_wd_report": // B슬리브 WD Paper 월간 리포트 (비용 차감 통계)
+		HandlePaperWDReport(args[1:])
 	default:
 		fmt.Printf("알 수 없는 stock 명령: %s\n", args[0])
 		fmt.Println("사용법:")
@@ -103,6 +107,8 @@ func Handle(args []string) {
 		fmt.Println("  ./RESTGo stock edgetest [markets_csv] [output_json]")
 		fmt.Println("  ./RESTGo stock baseline [markets_csv] [output_json] [strategy_yaml]")
 		fmt.Println("  ./RESTGo stock walkforward <market> [output_json] [strategy_yaml]")
+		fmt.Println("  ./RESTGo stock paper_wd [--date YYYYMMDD]")
+		fmt.Println("  ./RESTGo stock paper_wd_report [--month YYYYMM]")
 	}
 }
 
