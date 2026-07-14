@@ -98,6 +98,14 @@ func Handle(args []string) {
 		study.HandleVolumeWaveBoxStudy(args[1:])
 	case "volume_wave_strict_study": // 누적거래량·OBV + 좁은 고가놀이 소거·매트릭스
 		study.HandleVolumeWaveStrictStudy(args[1:])
+	case "mainbox_retest_study": // DefBox 돌파→MainBox retest A/B/C 독립 전략 연구
+		study.HandleMainBoxRetestStudy(args[1:])
+	case "mainbox_retest_s1_study": // 최초 돌파가 strategy1 YAML에도 매칭된 cohort
+		study.HandleMainBoxRetestS1Study(args[1:])
+	case "mainbox_retest_refine_study": // 상승폭×C0/C1/C2×retest형×원 signal 분해
+		study.HandleMainBoxRetestRefineStudy(args[1:])
+	case "mainbox_retest_temporal": // 고정 20%+Touch C0/C1 시간 안정성 kill test
+		study.HandleMainBoxRetestTemporal(args[1:])
 	case "trigger_scan": // 범용 트리거×조건 조합 전방수익률 측정 (일반·armed 트리거 모두)
 		study.HandleTriggerScan(args[1:])
 	case "listen": // 실시간 큐 소비 모드 — 가상 금일봉 250봉 수신 → 즉시 신호 평가 (2026-07-09)
@@ -122,6 +130,10 @@ func Handle(args []string) {
 		fmt.Println("  ./RESTGo stock volume_wave_charts [--max N] [--candles N] [--out path]")
 		fmt.Println("  ./RESTGo stock volume_wave_box_study [--max N] [--candles N] [--out path]")
 		fmt.Println("  ./RESTGo stock volume_wave_strict_study [--max N] [--candles N] [--out path]")
+		fmt.Println("  ./RESTGo stock mainbox_retest_study [--max N] [--candles N] [--out path]")
+		fmt.Println("  ./RESTGo stock mainbox_retest_s1_study [--max N] [--candles N] [--out path]")
+		fmt.Println("  ./RESTGo stock mainbox_retest_refine_study [--max N] [--candles N] [--out path]")
+		fmt.Println("  ./RESTGo stock mainbox_retest_temporal [--max N] [--candles N] [--out path]")
 		fmt.Println("  ./RESTGo stock paper_wd [--date YYYYMMDD]")
 		fmt.Println("  ./RESTGo stock paper_wd_report [--month YYYYMM]")
 	}
