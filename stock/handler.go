@@ -88,6 +88,16 @@ func Handle(args []string) {
 		study.HandlePullbackScan(args[1:])
 	case "wgc_scan": // W바텀(BB완화) × 골든크로스 임박 2×2 스캔 + strategy1 GC 후계산
 		study.HandleWGCScan(args[1:])
+	case "volume_wave_scan": // 선행 거래량→고가 횡보→2파동→MA20 3파동 독립 스캔
+		study.HandleVolumeWaveScan(args[1:])
+	case "volume_wave_matrix": // VW1/VW2 첫 눌림 next-open 진입 소거·IS/OOS 매트릭스
+		study.HandleVolumeWaveMatrix(args[1:])
+	case "volume_wave_charts": // 선정 VW2 첫 눌림 전략의 OOS P90/P50/P10 차트 데이터
+		study.HandleVolumeWaveChartSamples(args[1:])
+	case "volume_wave_box_study": // 고가놀이에 일반Box S-R-S를 결합한 소거 비교
+		study.HandleVolumeWaveBoxStudy(args[1:])
+	case "volume_wave_strict_study": // 누적거래량·OBV + 좁은 고가놀이 소거·매트릭스
+		study.HandleVolumeWaveStrictStudy(args[1:])
 	case "trigger_scan": // 범용 트리거×조건 조합 전방수익률 측정 (일반·armed 트리거 모두)
 		study.HandleTriggerScan(args[1:])
 	case "listen": // 실시간 큐 소비 모드 — 가상 금일봉 250봉 수신 → 즉시 신호 평가 (2026-07-09)
@@ -107,6 +117,11 @@ func Handle(args []string) {
 		fmt.Println("  ./RESTGo stock edgetest [markets_csv] [output_json]")
 		fmt.Println("  ./RESTGo stock baseline [markets_csv] [output_json] [strategy_yaml]")
 		fmt.Println("  ./RESTGo stock walkforward <market> [output_json] [strategy_yaml]")
+		fmt.Println("  ./RESTGo stock volume_wave_scan [--hannam|--foreign-*] [--max N] [--candles N] [--out path]")
+		fmt.Println("  ./RESTGo stock volume_wave_matrix [--max N] [--candles N] [--out path] [--oos-date YYYYMMDD]")
+		fmt.Println("  ./RESTGo stock volume_wave_charts [--max N] [--candles N] [--out path]")
+		fmt.Println("  ./RESTGo stock volume_wave_box_study [--max N] [--candles N] [--out path]")
+		fmt.Println("  ./RESTGo stock volume_wave_strict_study [--max N] [--candles N] [--out path]")
 		fmt.Println("  ./RESTGo stock paper_wd [--date YYYYMMDD]")
 		fmt.Println("  ./RESTGo stock paper_wd_report [--month YYYYMM]")
 	}
