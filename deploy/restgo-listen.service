@@ -1,3 +1,9 @@
+# ⛔ DEPRECATED (2026-07-15) — Docker 컨테이너로 대체됨
+# 대신 docker compose -f docker-compose.listen.yml up -d 사용
+#
+# 이 파일은 아카이브 목적으로만 보존. host systemd에 설치된 적 없음.
+#
+# ── 이전 내용 (참고용) ──
 # RESTGo 실시간 listen 데몬 systemd 유닛 (2026-07-09)
 # 설치 (host white에서):
 #   sudo cp deploy/restgo-listen.service /etc/systemd/system/
