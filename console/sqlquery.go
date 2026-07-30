@@ -2,8 +2,13 @@ package console
 
 import (
 	"database/sql"
+	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // RunSQLQuery 는 지정된 DB에서 SQL 쿼리를 실행하고 결과를 콘솔에 출력합니다.
@@ -63,11 +68,7 @@ func runSelectQuery(db *sql.DB, query string) error {
 
 		row := make([]string, len(columns))
 		for i, val := range values {
-			if val == nil {
-				row[i] = "NULL"
-			} else {
-				row[i] = fmt.Sprintf("%v", val)
-			}
+			row[i] = formatValue(val)
 		}
 		allRows = append(allRows, row)
 	}
@@ -125,6 +126,57 @@ func runSelectQuery(db *sql.DB, query string) error {
 
 	fmt.Printf("총 %d 행\n", len(allRows))
 	return nil
+}
+
+// formatValue 는 DB 스캔 값을 표시용 문자열로 바꾼다.
+//
+// %v를 그대로 쓰면 안 되는 이유: go-mssqldb는 DECIMAL/NUMERIC을 []byte로 돌려주는데,
+// %v는 이를 바이트 배열로 찍는다 — 종가 5060이 "[53 48 54 48 46 48 48 48 48]"로 나온다.
+// MONEY·VARBINARY·UNIQUEIDENTIFIER도 같은 경로다.
+func formatValue(val interface{}) string {
+	switch v := val.(type) {
+	case nil:
+		return "NULL"
+	case []byte:
+		// DECIMAL·MONEY는 ASCII 숫자열이므로 그대로 문자열이 된다.
+		// 진짜 바이너리(VARBINARY 등)는 깨진 글자 대신 16진수로 보여준다.
+		if isPrintable(v) {
+			return string(v)
+		}
+		return "0x" + hex.EncodeToString(v)
+	case time.Time:
+		// 자정이면 날짜만 — DATE 컬럼이 "00:00:00"을 달고 나오는 것을 막는다.
+		if v.Hour() == 0 && v.Minute() == 0 && v.Second() == 0 && v.Nanosecond() == 0 {
+			return v.Format("2006-01-02")
+		}
+		return v.Format("2006-01-02 15:04:05")
+	case float64:
+		// %v는 큰 수를 지수 표기로 바꾼다 (26804038 → 2.6804038e+07).
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(v), 'f', -1, 32)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+// isPrintable 은 출력 가능한 텍스트인지 본다 (탭·개행은 허용).
+//
+// UTF-8 검증을 먼저 한다 — string(b) 순회는 잘못된 바이트를 U+FFFD로 바꿔
+// 넘겨주므로, 이 검사 없이는 임의의 바이너리도 "출력 가능"으로 통과한다.
+func isPrintable(b []byte) bool {
+	if !utf8.Valid(b) {
+		return false
+	}
+	for _, r := range string(b) {
+		if r == '\t' || r == '\n' || r == '\r' {
+			continue
+		}
+		if !unicode.IsPrint(r) {
+			return false
+		}
+	}
+	return true
 }
 
 // truncate 문자열을 최대 길이로 자릅니다
