@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -87,13 +88,16 @@ func handleListen(args []string) {
 		return
 	}
 
-	// ── 전략 쌍 로드 (매수 룰은 파싱해 보관, 매도는 메시지마다 전역 스위치) ──
+	// ── 전략 쌍 로드 (매수·매도 모두 기동 시 1회만 파싱해 보관) ──
+	// 2026-07-31 이전에는 매도를 메시지마다 파일에서 다시 읽어 전역에 꽂았다
+	// (메시지 4천건 × 전략 2개 = 파일 8천 회 읽기). AnalyzeFull로 명시 전달해 없앴다.
 	type pair struct {
 		label    string // DB StrategyTradeLog.strategy 및 daily_batch 컨벤션과 동일
 		buyPath  string
 		sellPath string
 		rules    []stg.RuleConfig
 		settings stg.Settings
+		sell     *stg.SellSettings
 	}
 	pairs := []*pair{
 		{label: "S1_S03S23", buyPath: "rules/strategy1_s03s23.yaml", sellPath: "rules/sell_s03s23.yaml"},
@@ -106,6 +110,12 @@ func handleListen(args []string) {
 			return
 		}
 		p.rules, p.settings = rules, settings
+		sell, serr := stg.LoadSellStrategy(p.sellPath)
+		if serr != nil {
+			fmt.Fprintf(os.Stderr, "[listen] 매도 전략 로드 실패 (%s): %v\n", p.sellPath, serr)
+			return
+		}
+		p.sell = &sell
 		fmt.Printf("[listen] 전략 %s: 매수 %s (%d룰) + 매도 %s\n", p.label, p.buyPath, len(rules), p.sellPath)
 	}
 
@@ -115,9 +125,9 @@ func handleListen(args []string) {
 	// 날짜도 결정적으로 판정 가능. 이력은 벽시계 날짜 변경 시 재조회(daily_batch 야간 갱신 반영).
 	// 판정은 컨트롤러가 파싱 없이 쓰도록 구조화 필드(gate_pass/suggested_weight)로도 싣는다.
 	type gateInfo struct {
-		note string   // 사람용: "PASS (밀도 84 / 임계 81)"
-		pass *bool    // 기계용 (판정 불가 시 nil)
-		sw   float64  // 제안 비중 (equity 대비, PASS 시에만 >0)
+		note string  // 사람용: "PASS (밀도 84 / 임계 81)"
+		pass *bool   // 기계용 (판정 불가 시 nil)
+		sw   float64 // 제안 비중 (equity 대비, PASS 시에만 >0)
 	}
 	var gate *stg.DensityGate
 	gateCache := map[string]gateInfo{} // 봉날짜 → 판정
@@ -185,18 +195,29 @@ func handleListen(args []string) {
 		Hname     string  `json:"hname"`
 		TradeDate string  `json:"trade_date"`
 		Reason    string  `json:"reason"`
-		Weight    float64 `json:"weight"`               // 로직 결론: 보유 대비 매매 비율 (매수 1.0=전량 진입, 매도 0.5=절반)
-		Price     float64 `json:"price,omitempty"`      // 신호 캔들 종가 (원, 참고용)
+		Weight    float64 `json:"weight"`          // 로직 결론: 보유 대비 매매 비율 (매수 1.0=전량 진입, 매도 0.5=절반)
+		Price     float64 `json:"price,omitempty"` // 신호 캔들 종가 (원, 참고용)
 		NetReturn float64 `json:"net_return_pct,omitempty"`
 		BuyDate   string  `json:"buy_date,omitempty"`
-		Gate      string  `json:"gate,omitempty"`       // 사람용 문자열 (W중력 BUY에만)
-		GatePass  *bool   `json:"gate_pass,omitempty"`  // 기계용 판정 (W중력 BUY에만)
+		Gate      string  `json:"gate,omitempty"`             // 사람용 문자열 (W중력 BUY에만)
+		GatePass  *bool   `json:"gate_pass,omitempty"`        // 기계용 판정 (W중력 BUY에만)
 		SuggWt    float64 `json:"suggested_weight,omitempty"` // 게이트 PASS 시 제안 비중 (equity 대비, 예 0.02)
+		Source    string  `json:"source"`                     // LIVE(가상 금일봉) | EOD(확정 금일봉) | HIST(창 안 과거봉)
 		AsOf      string  `json:"as_of"`
 	}
 	nEvents := 0
+	nHist := 0
 	emit := func(e outEvent) {
 		nEvents++
+		// 과거봉(HIST)은 종목당 수십 건이라 콘솔·결과큐를 덮는다.
+		// 컨트롤러가 소비하는 것은 당일 신호이므로 HIST는 DB에만 남긴다.
+		if e.Source == "HIST" {
+			nHist++
+			if hanDB != nil {
+				hanDB.upsertTradeLog(e.Strategy, e.Shcode, e.Hname, e.Type, e.TradeDate, e.Reason, e.Weight, e.NetReturn, e.BuyDate, e.Source)
+			}
+			return
+		}
 		gateTag := ""
 		if e.Gate != "" {
 			gateTag = "  게이트 " + e.Gate
@@ -206,7 +227,7 @@ func handleListen(args []string) {
 			_ = console.SendJson(outQueue, e)
 		}
 		if hanDB != nil {
-			hanDB.upsertTradeLog(e.Strategy, e.Shcode, e.Hname, e.Type, e.TradeDate, e.Reason, e.Weight, e.NetReturn, e.BuyDate)
+			hanDB.upsertTradeLog(e.Strategy, e.Shcode, e.Hname, e.Type, e.TradeDate, e.Reason, e.Weight, e.NetReturn, e.BuyDate, e.Source)
 		}
 	}
 
@@ -222,7 +243,7 @@ func handleListen(args []string) {
 	for {
 		select {
 		case <-stop:
-			fmt.Printf("\n[listen] 종료 — 메시지 %d건 처리 (스킵 %d), 이벤트 %d건\n", nMsg, nSkip, nEvents)
+			fmt.Printf("\n[listen] 종료 — 메시지 %d건 처리 (스킵 %d), 이벤트 %d건 (당일 %d / 과거 %d)\n", nMsg, nSkip, nEvents, nEvents-nHist, nHist)
 			return
 		case amqpErr := <-connClosed:
 			// 소비자 채널은 자동 복구가 안 되므로 좀비로 남지 않게 비정상 종료 (systemd Restart가 재기동)
@@ -242,40 +263,41 @@ func handleListen(args []string) {
 			indicator.PrepareCandles(candles)
 			lastDate := candles[len(candles)-1].Date
 
+			lastClose := candles[len(candles)-1].CloseOrigin
+			// 마지막 봉의 source — 가상봉이면 LIVE(실매매 근거, 불가침), 확정봉이면 EOD.
+			// 그 이전 봉은 전부 HIST라 daily_batch가 쓰는 행과 키·값이 같아 멱등 수렴한다.
+			lastSource := msg.LastBarSource()
 			for _, p := range pairs {
-				if err := stg.LoadSellStrategyFile(p.sellPath); err != nil {
-					fmt.Fprintf(os.Stderr, "[listen] 매도 로드 실패 (%s): %v\n", p.sellPath, err)
-					continue
-				}
-				result := stg.AnalyzeWithRules(candles, p.rules, p.settings)
+				result := stg.AnalyzeFull(candles, p.rules, p.settings, p.sell)
 				for _, sig := range result.BuySignals {
-					if sig.Date != lastDate {
-						continue
-					}
 					e := outEvent{Type: "BUY", Strategy: p.label, Shcode: msg.Shcode, Hname: msg.Hname,
-						TradeDate: lastDate, Reason: sig.Reason, Weight: 1.0,
-						Price: candles[len(candles)-1].CloseOrigin, AsOf: msg.AsOf}
+						TradeDate: sig.Date, Reason: sig.Reason, Weight: 1.0,
+						Source: sourceFor(sig.Date, lastDate, lastSource), AsOf: msg.AsOf}
+					if sig.Date == lastDate {
+						e.Price = lastClose
+					}
 					if p.label == "W_DefBoxGravity" {
-						gi := gateFor(lastDate) // 봉 날짜 시점의 게이트 (백테스트 정합)
+						gi := gateFor(sig.Date) // 봉 날짜 시점의 게이트 (백테스트 정합)
 						e.Gate, e.GatePass, e.SuggWt = gi.note, gi.pass, gi.sw
 					}
 					emit(e)
 				}
 				for _, pos := range result.Positions {
 					for _, ex := range pos.SellExecutions {
-						if ex.SellDate != lastDate {
-							continue
+						e := outEvent{Type: "SELL", Strategy: p.label, Shcode: msg.Shcode, Hname: msg.Hname,
+							TradeDate: ex.SellDate, Reason: ex.SellReason, Weight: ex.Weight,
+							NetReturn: ex.NetPartialReturn, BuyDate: pos.BuyDate,
+							Source: sourceFor(ex.SellDate, lastDate, lastSource), AsOf: msg.AsOf}
+						if ex.SellDate == lastDate {
+							e.Price = lastClose
 						}
-						emit(outEvent{Type: "SELL", Strategy: p.label, Shcode: msg.Shcode, Hname: msg.Hname,
-							TradeDate: lastDate, Reason: ex.SellReason, Weight: ex.Weight,
-							Price: candles[len(candles)-1].CloseOrigin,
-							NetReturn: ex.NetPartialReturn, BuyDate: pos.BuyDate, AsOf: msg.AsOf})
+						emit(e)
 					}
 				}
 			}
 			nMsg++
 			if nMsg%200 == 0 {
-				fmt.Printf("[listen] %d건 처리 (스킵 %d, 이벤트 %d)\n", nMsg, nSkip, nEvents)
+				fmt.Printf("[listen] %d건 처리 (스킵 %d, 이벤트 %d — 당일 %d / 과거 %d)\n", nMsg, nSkip, nEvents, nEvents-nHist, nHist)
 			}
 		}
 	}
@@ -288,7 +310,29 @@ type virtualMsg struct {
 	Shcode string            `json:"shcode"`
 	Hname  string            `json:"hname"`
 	AsOf   string            `json:"as_of"`
+	Mode   string            `json:"mode,omitempty"` // "eod" = 마지막 봉이 확정봉 / 생략·"live" = 가상 금일봉
 	RawBar []json.RawMessage `json:"bars"`
+}
+
+// LastBarSource 는 마지막 봉의 source 태그를 반환한다.
+//
+// 발행측이 mode="eod"를 붙이면 확정봉으로 보고 EOD, 아니면 가상봉으로 보고 LIVE.
+// 기본이 LIVE인 것은 의도적이다 — 기존 발행기가 mode를 안 붙이며(v1 스키마 하위호환),
+// 확정봉을 가상봉으로 오인하는 쪽이 그 반대보다 안전하다(LIVE는 EOD가 덮지 않는 규약).
+func (m *virtualMsg) LastBarSource() string {
+	if strings.EqualFold(m.Mode, "eod") {
+		return "EOD"
+	}
+	return "LIVE"
+}
+
+// sourceFor 는 이벤트 날짜에 맞는 source를 고른다.
+// 마지막 봉 = 발행 모드에 따라 LIVE/EOD, 그 이전 = HIST(daily_batch와 동일 규약).
+func sourceFor(eventDate, lastDate, lastSource string) string {
+	if eventDate == lastDate {
+		return lastSource
+	}
+	return "HIST"
 }
 
 func parseVirtualMsg(body []byte) (*virtualMsg, []*box.Candle, error) {
@@ -353,18 +397,37 @@ type dbHandle struct{ db *sql.DB }
 // source 규약 (2026-07-09, 사용자 설계): LIVE = 15:17 가상봉 기반 실시간 신호 — **실제 매매의 근거이므로
 // 마감 후 확정 재계산(daily_batch, source='EOD')이 절대 덮어쓰지 않는다.** 같은 날짜에 LIVE/EOD 두 벌이
 // 공존하며, 둘의 차이가 곧 "가상봉 vs 확정봉 신호 괴리" 모니터링 지표가 된다.
-func (h *dbHandle) upsertTradeLog(strategy, shcode, hname, eventType, tradeDate, reason string, weight, netReturn float64, buyDate string) {
-	_, _ = h.db.Exec(`DELETE FROM StrategyTradeLog WHERE strategy=@p1 AND shcode=@p2 AND event_type=@p3 AND trade_date=@p4 AND reason=@p5 AND source='LIVE'`,
-		strategy, shcode, eventType, tradeDate, reason)
+// source: LIVE(가상 금일봉) / EOD(확정 금일봉) / HIST(창 안 과거봉).
+// 같은 source 안에서만 멱등 교체하므로 LIVE 행은 EOD·HIST 적재에 영향을 받지 않는다.
+// HIST 행은 daily_batch가 쓰는 것과 키·값이 같아 어느 쪽이 먼저 써도 결과가 같다
+// (신호가 실행 간 불변임을 실측: 35종목×창끝 3절단 = 105건 비교, 불일치 0).
+func (h *dbHandle) upsertTradeLog(strategy, shcode, hname, eventType, tradeDate, reason string, weight, netReturn float64, buyDate, source string) {
+	if source == "" {
+		source = "LIVE"
+	}
 	var nr, bd interface{}
 	if eventType == "SELL" {
 		nr, bd = netReturn, buyDate
 	}
-	_, err := h.db.Exec(`INSERT INTO StrategyTradeLog (strategy, shcode, hname, event_type, trade_date, reason, weight, net_return_pct, buy_date, source)
-		VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, 'LIVE')`,
-		strategy, shcode, hname, eventType, tradeDate, reason, weight, nr, bd)
+	// as_of_date는 최초 관측일을 보존한다 (재실행이 첫 관측 시점을 밀어내지 않도록).
+	asOf := time.Now().Format("20060102")
+	_, err := h.db.Exec(`
+		MERGE StrategyTradeLog AS t
+		USING (VALUES (@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10,@p11)) AS s
+			(strategy, shcode, hname, event_type, trade_date, reason, weight, net_return_pct, buy_date, source, as_of_date)
+		ON t.strategy=s.strategy AND t.shcode=s.shcode AND t.trade_date=s.trade_date
+		   AND t.event_type=s.event_type AND t.source=s.source AND t.reason=s.reason
+		   AND ISNULL(t.buy_date,'')=ISNULL(s.buy_date,'')
+		WHEN MATCHED THEN UPDATE SET hname=s.hname, weight=s.weight, net_return_pct=s.net_return_pct,
+			as_of_date = CASE WHEN t.as_of_date IS NULL OR s.as_of_date < t.as_of_date
+			                  THEN s.as_of_date ELSE t.as_of_date END
+		WHEN NOT MATCHED THEN INSERT (strategy, shcode, hname, event_type, trade_date, reason,
+			weight, net_return_pct, buy_date, source, as_of_date, candle_source)
+			VALUES (s.strategy, s.shcode, s.hname, s.event_type, s.trade_date, s.reason,
+			        s.weight, s.net_return_pct, s.buy_date, s.source, s.as_of_date, 'queue');`,
+		strategy, shcode, hname, eventType, tradeDate, reason, weight, nr, bd, source, asOf)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[listen] TradeLog 적재 실패 (%s %s): %v\n", shcode, eventType, err)
+		fmt.Fprintf(os.Stderr, "[listen] TradeLog 적재 실패 (%s %s %s): %v\n", shcode, eventType, source, err)
 	}
 }
 
@@ -400,10 +463,11 @@ func handleFeed(args []string) {
 			}
 		}
 	}
-	// 국내 일봉 소스: hannam (2026-07-09 사용자 지시)
-	db, err := console.MsConn.GetDB("han")
+	// 국내 일봉 소스: batch와 동일한 스위치 (2026-07-31). 소스가 갈리면 패리티 검증이 무의미하다.
+	src := activeCandleSource()
+	db, err := console.MsConn.GetDB(src.DBLabel)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[feed] han DB 연결 실패: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[feed] %s DB 연결 실패: %v\n", src.DBLabel, err)
 		return
 	}
 	if err := console.RabbitMQSession.AddConsumerChannel(queue); err != nil {
@@ -413,7 +477,7 @@ func handleFeed(args []string) {
 			return
 		}
 	}
-	codes, err := box.FetchHannamStockList(db)
+	codes, err := src.fetchStockList(db)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[feed] 종목 조회 실패: %v\n", err)
 		return
@@ -432,9 +496,10 @@ func handleFeed(args []string) {
 		stocks = stocks[:maxN]
 	}
 	asOf := time.Now().Format("20060102 15:04:05")
+	fmt.Printf("[feed] 소스 %s (%s), %d종목 발행 시작\n", src.Name, src.DBLabel, len(stocks))
 	sent, skip := 0, 0
 	for _, s := range stocks {
-		candles, err := box.FetchCandlesHannam(db, s.Shcode, days)
+		candles, err := src.fetchCandles(db, s.Shcode, days)
 		if err != nil || len(candles) < 130 {
 			skip++
 			continue
@@ -443,7 +508,10 @@ func handleFeed(args []string) {
 		for _, c := range candles {
 			bars = append(bars, []interface{}{c.Date, c.OpenOrigin, c.HighOrigin, c.LowOrigin, c.CloseOrigin, c.Volume})
 		}
-		msg := map[string]interface{}{"v": 1, "shcode": s.Shcode, "hname": s.Hname, "as_of": asOf, "bars": bars}
+		// mode=eod — feed는 DB의 확정봉을 보낸다. listen이 마지막 봉을 EOD로 태깅하게 한다
+		// (가상봉 발행기는 이 필드를 생략하므로 LIVE로 남는다).
+		msg := map[string]interface{}{"v": 1, "shcode": s.Shcode, "hname": s.Hname,
+			"as_of": asOf, "mode": "eod", "bars": bars}
 		if err := console.SendJson(queue, msg); err != nil {
 			fmt.Fprintf(os.Stderr, "[feed] 발행 실패 (%s): %v\n", s.Shcode, err)
 			skip++
