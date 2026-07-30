@@ -214,6 +214,19 @@ func handleDensityGate(args []string) {
 	if dec.HistoryDays == 0 {
 		fmt.Println("[densitygate] 경고: 임계값 표본이 없음 — 신호 이력 백필/적재 상태를 확인하라")
 	}
+	// 이력 공백 경고 — 밀도 0/저조가 "가뭄"인지 "미기록"인지 구분해 준다.
+	// 테이블이 신호 0건인 날과 배치 미실행일을 구분하지 못하므로 게이트만으로는 알 수 없다.
+	if dec.LastRecorded != "" && dec.LastRecorded < dec.Date {
+		fmt.Printf("[densitygate] ★경고: 이력 마지막 기록일 %s < 판정일 %s — 밀도 윈도우에 미기록 구간이 있다. "+
+			"판정 전에 daily_batch 적재 상태를 확인하라\n", dec.LastRecorded, dec.Date)
+	}
+	if dec.RecordedInWindow == 0 {
+		fmt.Printf("[densitygate] ★경고: 밀도 윈도우(%d일) 안에 기록이 한 건도 없음 — 밀도 %d는 신호 가뭄이 아니라 "+
+			"미기록일 수 있다\n", cfg.WindowDays, dec.Density)
+	} else {
+		fmt.Printf("[densitygate] 이력 커버리지: 윈도우 내 기록일 %d일, 마지막 기록 %s\n",
+			dec.RecordedInWindow, dec.LastRecorded)
+	}
 }
 
 func handleAnalyze(args []string) {
@@ -443,6 +456,10 @@ func handleBatch(args []string) {
 	// 그 상태로 적재하면 StrategySignalDaily에 소수 종목 기준 count가 박히고,
 	// 기존 행 보존 규약 때문에 나중에 데이터가 다 차도 덮어써지지 않는다.
 	lastDates := map[string]int{}
+	// tradingDates: 분석 창에 등장한 모든 봉 날짜의 합집합 = 거래일 달력.
+	// 소비자(daily_batch)가 "신호 0건인 날"에도 count=0 행을 남길 수 있게 한다.
+	// 이 행이 없으면 밀도 게이트가 미기록일을 신호 가뭄으로 오독한다.
+	tradingDates := map[string]struct{}{}
 
 	batchSettings := stg.GetActiveSettings()
 
@@ -464,6 +481,11 @@ func handleBatch(args []string) {
 			if last := candles[len(candles)-1].Date; last != "" {
 				mu.Lock()
 				lastDates[last]++
+				for _, c := range candles {
+					if c.Date != "" {
+						tradingDates[c.Date] = struct{}{}
+					}
+				}
 				mu.Unlock()
 			}
 
@@ -522,12 +544,22 @@ func handleBatch(args []string) {
 		jsonItems = append(jsonItems, resultItemJSON{r.Shcode, r.Hname, sigs, r.Sells})
 	}
 
+	// 거래일 달력 — data_date 이하만. 그 이후는 부분 적재 구간이라 대표성이 없다.
+	calendar := make([]string, 0, len(tradingDates))
+	for d := range tradingDates {
+		if dataDate == "" || d <= dataDate {
+			calendar = append(calendar, d)
+		}
+	}
+	sort.Strings(calendar)
+
 	output := map[string]interface{}{
 		"generated_at": generatedAt,
 		// data_date: 종목 커버리지가 임계 이상인 최신 봉 날짜 (달력 오늘도, 단순 최댓값도 아님)
 		"data_date":          dataDate,
 		"data_date_coverage": math.Round(dataCoverage*1000) / 1000,
 		"data_date_max":      maxDate, // 참고용 — 적재 진행 중이면 data_date보다 앞선다
+		"trading_dates":      calendar,
 		"display_days":       180,
 		"stocks":             jsonItems,
 	}

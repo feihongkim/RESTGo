@@ -57,6 +57,14 @@ type GateDecision struct {
 	Pass            bool    // Density ≥ Threshold
 	SuggestedWeight float64 // 통과 시 제안 비중 = 1/SizingK (미통과 시 0)
 	HistoryDays     int     // 임계값 산출에 실제 사용된 신호-일 수 (부족 시 경고 판단용)
+
+	// ── 이력 공백 진단 (2026-07-30) ──
+	// 이 테이블은 "신호 0건인 날"과 "배치가 안 돈 날"을 구분하지 못한다. 둘 다 행이 없다.
+	// 그래서 기록이 끊긴 구간을 게이트가 "신호 가뭄"으로 읽고 잘못 HOLD를 낼 수 있다
+	// (2026-07-30 실제 발생: 20260627~0716 미기록 → 밀도 0 → 오판정).
+	// 아래 두 필드로 호출측이 "판정 근거가 실재하는가"를 확인할 수 있다.
+	RecordedInWindow int    // 밀도 윈도우 [D-W, D) 안에 기록이 존재하는 날짜 수
+	LastRecorded     string // 이력 전체의 마지막 기록일 (YYYYMMDD). 판정일보다 과거면 공백 구간이 있다는 뜻
 }
 
 // DensityGate 는 신호 이력 기반 밀도 게이트. 불변(immutable)으로 생성 후 조회만 한다.
@@ -254,9 +262,27 @@ func (g *DensityGate) Evaluate(date string) (GateDecision, error) {
 		return GateDecision{}, err
 	}
 	dec := GateDecision{Date: date, Density: dens, Threshold: thr, HistoryDays: n}
+	dec.RecordedInWindow, dec.LastRecorded = g.windowCoverage(date)
 	dec.Pass = dens >= thr && n > 0
 	if dec.Pass {
 		dec.SuggestedWeight = 1.0 / float64(g.cfg.SizingK)
 	}
 	return dec, nil
+}
+
+// windowCoverage 는 밀도 윈도우 안의 기록 존재 날짜 수와 이력 마지막 기록일을 반환한다.
+// 판정 자체는 바꾸지 않는다 — 호출측이 "밀도 0"이 가뭄인지 미기록인지 가리는 데만 쓴다.
+func (g *DensityGate) windowCoverage(date string) (int, string) {
+	last := ""
+	if len(g.dates) > 0 {
+		last = g.dates[len(g.dates)-1].Format(dateLayout)
+	}
+	d, err := time.Parse(dateLayout, date)
+	if err != nil {
+		return 0, last
+	}
+	from := d.AddDate(0, 0, -g.cfg.WindowDays)
+	lo := sort.Search(len(g.dates), func(i int) bool { return !g.dates[i].Before(from) })
+	hi := sort.Search(len(g.dates), func(i int) bool { return !g.dates[i].Before(d) })
+	return hi - lo, last
 }

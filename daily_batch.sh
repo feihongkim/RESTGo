@@ -27,6 +27,8 @@
 #   StrategySignalDaily — 밀도 게이트(stg/overlay_density.go)의 입력이다. 과거 날짜를
 #     소급 덮어쓰면 분위수 임계값이 움직여 과거 게이트 판정이 바뀌므로, 회고분은
 #     비어 있는 날짜만 채운다(WHEN NOT MATCHED). DATA_DATE 행만 확정 교체한다.
+#     신호 0건인 거래일도 count=0 행으로 남겨 "0건"과 "미기록"을 구분한다
+#     (0행은 밀도·임계 계산에 기여하지 않아 판정은 불변). as_of_date = 배치 실행일.
 #
 # 주의: 매도 알림은 "분석 창(250일) 신호대로 매수했다면"의 시뮬레이션 포지션 기준 —
 #       실계좌 보유와 다를 수 있음 (부분 진입·게이트 스킵 등). 실보유 대사는 source='LIVE' 행으로.
@@ -59,6 +61,7 @@ def esc(x): return str(x).replace("'", "''")
 strat = {'daily_s03s23': 'S1_S03S23', 'daily_wdefbox': 'W_DefBoxGravity'}
 
 data_date = ''
+calendar = set()                # 거래일 달력 (batch JSON의 trading_dates 합집합)
 counts = {}                     # (strategy, trade_date) -> 매수 신호 수
 events = {}                     # 멱등 키 -> 행 튜플 (MERGE는 중복 소스행에서 실패하므로 선-중복제거)
 for f, name in strat.items():
@@ -66,6 +69,7 @@ for f, name in strat.items():
     dd = d.get('data_date') or ''
     if dd > data_date:
         data_date = dd
+    calendar.update(d.get('trading_dates') or [])
     for s in d['stocks']:
         for g in s['signals']:
             counts[(name, g['date'])] = counts.get((name, g['date']), 0) + 1
@@ -96,20 +100,26 @@ def lit(v, quote=True, n=False):
 sql = []
 
 # ③ StrategySignalDaily — DATA_DATE 행만 확정 교체, 과거는 빈 날짜만 채움(게이트 입력 보호)
+#
+# 신호가 0건인 거래일에도 count=0 행을 남긴다. 이 테이블은 "0건인 날"과
+# "배치가 안 돈 날"을 구분하지 못해(둘 다 행 없음) 게이트가 미기록을 신호 가뭄으로
+# 오독한다 — 2026-07-30 실제 오판정의 원인. 0행은 밀도 합산에도, 임계 표본(신호 수
+# 가중)에도 기여하지 않으므로 기존 판정을 바꾸지 않는다.
 for name in strat.values():
     sql.append("DELETE FROM StrategySignalDaily WHERE strategy='%s' AND trade_date='%s'" % (name, data_date))
-    n_today = counts.get((name, data_date), 0)
-    if n_today > 0:
-        sql.append("INSERT INTO StrategySignalDaily (strategy, trade_date, signal_count) VALUES ('%s','%s',%d)"
-                   % (name, data_date, n_today))
-hist_counts = [(k[0], k[1], v) for k, v in sorted(counts.items()) if k[1] < data_date]
-for i in range(0, len(hist_counts), 500):
-    vals = ",".join("('%s','%s',%d)" % c for c in hist_counts[i:i+500])
+    sql.append("INSERT INTO StrategySignalDaily (strategy, trade_date, signal_count, as_of_date) "
+               "VALUES ('%s','%s',%d,'%s')" % (name, data_date, counts.get((name, data_date), 0), run_date))
+
+cal_days = sorted(d for d in calendar if d < data_date)
+hist_counts = [(name, day, counts.get((name, day), 0))
+               for name in strat.values() for day in cal_days]
+for i in range(0, len(hist_counts), 400):
+    vals = ",".join("('%s','%s',%d,'%s')" % (c[0], c[1], c[2], run_date) for c in hist_counts[i:i+400])
     sql.append(
-        "MERGE StrategySignalDaily AS t USING (VALUES %s) AS s(strategy, trade_date, signal_count) "
+        "MERGE StrategySignalDaily AS t USING (VALUES %s) AS s(strategy, trade_date, signal_count, as_of_date) "
         "ON t.strategy = s.strategy AND t.trade_date = s.trade_date "
-        "WHEN NOT MATCHED THEN INSERT (strategy, trade_date, signal_count) "
-        "VALUES (s.strategy, s.trade_date, s.signal_count);" % vals)
+        "WHEN NOT MATCHED THEN INSERT (strategy, trade_date, signal_count, as_of_date) "
+        "VALUES (s.strategy, s.trade_date, s.signal_count, s.as_of_date);" % vals)
 
 # ④ StrategyTradeLog — 창 전체 멱등 MERGE. LIVE 행은 source가 달라 매칭되지 않으므로 안전.
 rows = sorted(events.values(), key=lambda r: (r[0], r[4], r[1]))

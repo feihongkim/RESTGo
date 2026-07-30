@@ -121,3 +121,70 @@ func TestInvalidConfig(t *testing.T) {
 		t.Error("Quantile=1.5 인데 에러 없음")
 	}
 }
+
+// count=0 행은 밀도·임계 계산에 기여하지 않아야 한다.
+// daily_batch가 "신호 0건인 날"과 "배치 미실행일"을 구분하려고 0행을 남기는데,
+// 이게 게이트 판정을 바꾸면 안 된다 (2026-07-30 도입 시 전제).
+func TestZeroCountRowsDoNotAffectDecision(t *testing.T) {
+	cfg := DefaultDensityGateConfig()
+	base := []DailySignalCount{
+		{"20250102", 7}, {"20250115", 20}, {"20250129", 3},
+	}
+	withZeros := append([]DailySignalCount{}, base...)
+	for _, d := range []string{"20250103", "20250106", "20250120", "20250128"} {
+		withZeros = append(withZeros, DailySignalCount{d, 0})
+	}
+
+	a, err := mkGate(t, cfg, base).Evaluate("20250130")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := mkGate(t, cfg, withZeros).Evaluate("20250130")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Density != b.Density || a.Threshold != b.Threshold || a.Pass != b.Pass || a.HistoryDays != b.HistoryDays {
+		t.Errorf("0행이 판정을 바꿨다:\n  없이: 밀도%d 임계%d pass=%v 표본%d\n  있이: 밀도%d 임계%d pass=%v 표본%d",
+			a.Density, a.Threshold, a.Pass, a.HistoryDays,
+			b.Density, b.Threshold, b.Pass, b.HistoryDays)
+	}
+	// 다만 커버리지는 늘어야 한다 — 0행의 존재 이유가 그것이다
+	if b.RecordedInWindow <= a.RecordedInWindow {
+		t.Errorf("0행이 커버리지에 반영되지 않음: %d → %d", a.RecordedInWindow, b.RecordedInWindow)
+	}
+}
+
+// 이력이 판정일보다 뒤처지면 LastRecorded로 드러나야 한다 (2026-07-30 오판정 재발 방지).
+func TestGateDetectsHistoryHole(t *testing.T) {
+	cfg := DefaultDensityGateConfig()
+	g := mkGate(t, cfg, []DailySignalCount{
+		{"20260601", 50}, {"20260610", 60}, {"20260626", 40},
+	})
+
+	// 기록이 끊긴 뒤(20260730)를 판정하면 윈도우가 비어 밀도 0 — 가뭄이 아니라 미기록이다
+	dec, err := g.Evaluate("20260730")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dec.Density != 0 {
+		t.Errorf("밀도 = %d, want 0", dec.Density)
+	}
+	if dec.RecordedInWindow != 0 {
+		t.Errorf("RecordedInWindow = %d, want 0 (윈도우에 기록 없음)", dec.RecordedInWindow)
+	}
+	if dec.LastRecorded != "20260626" {
+		t.Errorf("LastRecorded = %q, want 20260626", dec.LastRecorded)
+	}
+	if !(dec.LastRecorded < dec.Date) {
+		t.Error("이력 마지막 기록일이 판정일보다 과거인데 탐지되지 않음")
+	}
+
+	// 기록이 있는 구간을 판정하면 커버리지가 잡혀야 한다
+	ok, err := g.Evaluate("20260627")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok.RecordedInWindow != 3 {
+		t.Errorf("RecordedInWindow = %d, want 3", ok.RecordedInWindow)
+	}
+}
