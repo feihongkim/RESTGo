@@ -8,7 +8,9 @@ import (
 	"RESTGo/study"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -435,10 +437,12 @@ func handleBatch(args []string) {
 	sem := make(chan struct{}, 20)
 	var wg sync.WaitGroup
 	var processed int32
-	// dataDate: 분석에 실제로 쓰인 마지막 봉 날짜 (전 종목 최대).
-	// 달력 오늘과 다를 수 있다 — 일봉 적재가 지연되면 뒤처진다. 소비자(daily_batch)는
-	// "오늘 신호"를 달력이 아니라 이 값 기준으로 판정해야 신호를 잃지 않는다.
-	var dataDate string
+	// lastDates: 종목별 마지막 봉 날짜 분포. dataDate 산출에 쓴다.
+	// 전 종목 최댓값을 쓰면 안 된다 — 일봉 적재는 종목코드 순으로 진행되므로,
+	// 적재 중에는 선두 몇 종목이 전체를 대표해 버린다 (2026-07-30: 23/4298 종목만 최신).
+	// 그 상태로 적재하면 StrategySignalDaily에 소수 종목 기준 count가 박히고,
+	// 기존 행 보존 규약 때문에 나중에 데이터가 다 차도 덮어써지지 않는다.
+	lastDates := map[string]int{}
 
 	batchSettings := stg.GetActiveSettings()
 
@@ -459,9 +463,7 @@ func handleBatch(args []string) {
 
 			if last := candles[len(candles)-1].Date; last != "" {
 				mu.Lock()
-				if last > dataDate {
-					dataDate = last
-				}
+				lastDates[last]++
 				mu.Unlock()
 			}
 
@@ -491,6 +493,18 @@ func handleBatch(args []string) {
 
 	fmt.Printf("\n[%s] 매수 신호 종목: %d개\n", console.GenerateTimestampedString(), len(results))
 
+	dataDate, dataCoverage, maxDate := resolveDataDate(lastDates, dataDateCoverageThreshold())
+	if dataDate == "" {
+		fmt.Printf("[%s] [경고] data_date 산출 불가 — 분석된 캔들이 없습니다\n", console.GenerateTimestampedString())
+	} else {
+		fmt.Printf("[%s] 기준일(data_date) %s  커버리지 %.1f%% (임계 %.0f%%)\n",
+			console.GenerateTimestampedString(), dataDate, dataCoverage*100, dataDateCoverageThreshold()*100)
+		if dataDate != maxDate {
+			fmt.Printf("[%s] [경고] 일봉 적재 진행 중 — 최신 봉은 %s이나 커버리지 미달로 %s를 기준일로 사용합니다\n",
+				console.GenerateTimestampedString(), maxDate, dataDate)
+		}
+	}
+
 	generatedAt := time.Now().Format("20060102_150405")
 	jsonItems := make([]resultItemJSON, 0, len(results))
 	for _, r := range results {
@@ -510,9 +524,12 @@ func handleBatch(args []string) {
 
 	output := map[string]interface{}{
 		"generated_at": generatedAt,
-		"data_date":    dataDate, // 분석에 쓰인 마지막 봉 날짜 (달력 오늘이 아님)
-		"display_days": 180,
-		"stocks":       jsonItems,
+		// data_date: 종목 커버리지가 임계 이상인 최신 봉 날짜 (달력 오늘도, 단순 최댓값도 아님)
+		"data_date":          dataDate,
+		"data_date_coverage": math.Round(dataCoverage*1000) / 1000,
+		"data_date_max":      maxDate, // 참고용 — 적재 진행 중이면 data_date보다 앞선다
+		"display_days":       180,
+		"stocks":             jsonItems,
 	}
 
 	data, err := json.MarshalIndent(output, "", "  ")
@@ -608,4 +625,50 @@ func handleCandlesJSON(args []string) {
 	} else {
 		fmt.Println(string(data))
 	}
+}
+
+// dataDateCoverageThreshold 는 data_date 판정에 요구하는 종목 커버리지 비율.
+// RESTGO_DATA_DATE_COVERAGE로 조정 가능 (0 초과 1 이하). 기본 0.8.
+func dataDateCoverageThreshold() float64 {
+	if v := os.Getenv("RESTGO_DATA_DATE_COVERAGE"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 && f <= 1 {
+			return f
+		}
+		fmt.Fprintf(os.Stderr, "[warn] RESTGO_DATA_DATE_COVERAGE 무시 (0<x<=1 아님): %s\n", v)
+	}
+	return 0.8
+}
+
+// resolveDataDate 는 종목별 마지막 봉 날짜 분포에서 기준일을 고른다.
+//
+// 커버리지(D) = (마지막 봉이 D 이상인 종목 수) / (분석된 종목 수) 로 정의하고,
+// 커버리지가 threshold 이상인 **가장 최근** 날짜를 반환한다. 커버리지는 D가 커질수록
+// 단조 감소하므로 최신 날짜부터 내려오며 첫 충족 지점을 찾으면 된다.
+//
+// 일봉 적재가 종목코드 순으로 진행되는 동안에는 선두 소수 종목의 최신 날짜가
+// 커버리지 미달로 걸러지고 직전 완전일이 선택된다. 적재가 끝나면 자연히 최신일로 넘어간다.
+//
+// 반환: (기준일, 그 날짜의 커버리지, 전체 최댓값). 입력이 비면 모두 zero value.
+func resolveDataDate(lastDates map[string]int, threshold float64) (string, float64, string) {
+	total := 0
+	dates := make([]string, 0, len(lastDates))
+	for d, n := range lastDates {
+		dates = append(dates, d)
+		total += n
+	}
+	if total == 0 {
+		return "", 0, ""
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(dates))) // 날짜 문자열은 YYYYMMDD라 사전순 = 시간순
+
+	cum := 0
+	for _, d := range dates {
+		cum += lastDates[d] // d 이상인 종목 누적 (내림차순 순회이므로)
+		if cov := float64(cum) / float64(total); cov >= threshold {
+			return d, cov, dates[0]
+		}
+	}
+	// 임계 미달이면(분포가 극단적으로 흩어진 경우) 가장 오래된 날짜 — 전 종목이 커버하는 유일한 지점
+	oldest := dates[len(dates)-1]
+	return oldest, 1.0, dates[0]
 }

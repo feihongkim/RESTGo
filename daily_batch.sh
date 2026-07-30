@@ -80,6 +80,14 @@ if not data_date:
     print('[오류] batch JSON에 data_date가 없습니다 — RESTGo 재빌드 필요', file=sys.stderr)
     sys.exit(1)
 
+# DATA_DATE 이후 이벤트는 버린다. 적재가 진행 중일 때 선두 소수 종목만 최신 봉을 가지므로,
+# 그 구간 신호는 "23종목만의 시장"이라 대표성이 없다. 게다가 HIST로 넣어두면 나중에
+# 데이터가 다 찬 뒤 같은 신호가 EOD로 다시 들어와 중복된다 (MERGE 키에 source가 있음).
+dropped = [k for k in events if k[2] > data_date]
+for k in dropped:
+    del events[k]
+counts = {k: v for k, v in counts.items() if k[1] <= data_date}
+
 def lit(v, quote=True, n=False):
     if v is None: return 'NULL'
     if isinstance(v, float): return '%.4f' % v
@@ -134,6 +142,9 @@ n_eod = sum(1 for r in rows if r[4] == data_date)
 lag = (int(run_date) - int(data_date))
 print('[적재 준비] 기준일(DATA_DATE) %s (실행일 %s)  창 전체 이벤트 %d행 (당일분 EOD %d행)'
       % (data_date, run_date, len(rows), n_eod))
+if dropped:
+    print('[적재 준비] 기준일 이후 이벤트 %d건 제외 (부분 적재 구간 — 데이터가 다 차면 다음 실행에 포함)'
+          % len(dropped))
 if data_date != run_date:
     print('[경고] 일봉 적재 지연 — 분석 기준일이 실행일보다 과거입니다 (%s < %s). '
           '당일 신호는 %s 기준으로 판정됩니다.' % (data_date, run_date, data_date))
