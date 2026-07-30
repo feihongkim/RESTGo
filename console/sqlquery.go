@@ -7,7 +7,7 @@ import (
 )
 
 // RunSQLQuery 는 지정된 DB에서 SQL 쿼리를 실행하고 결과를 콘솔에 출력합니다.
-// dbName: "key", "han", "var", "KIS2" 중 하나
+// dbName: "key", "han", "var", "KIS2", "tuf", "LS" 중 하나
 func RunSQLQuery(dbName string, query string) error {
 	db, err := MsConn.GetDB(dbName)
 	if err != nil {

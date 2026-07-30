@@ -66,7 +66,7 @@ go test ./...
 go mod tidy
 ```
 
-지원 DB: `key` (기본), `han`, `var`, `KIS2`
+지원 DB: `key` (기본), `han`, `var`, `KIS2`, `tuf`, `LS` (tuf·LS는 비필수 — 연결 실패 시 해당 기능만 비활성. LS는 KeyValueStore에 ADDR_LS/DBNAME_LS 등록 시에만 연결)
 
 ## 핵심 아키텍처
 

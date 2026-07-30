@@ -57,6 +57,10 @@ func init() {
 			EnvTUF.MSSQL_ADDR = config.VALUE_DATA
 		case "DBNAME_TUF":
 			EnvTUF.MSSQL_DBTUF = config.VALUE_DATA
+		case "ADDR_LS":
+			EnvLS.MSSQL_ADDR = config.VALUE_DATA
+		case "DBNAME_LS":
+			EnvLS.MSSQL_DBLS = config.VALUE_DATA
 		}
 	}
 
@@ -102,6 +106,13 @@ func init() {
 	if err := MsConn.EnsureConnection("tuf"); err != nil {
 		log.Printf("tuf DB 연결 실패 (비필수): %v", err)
 		// non-fatal: 15분봉 분석 기능만 비활성
+	}
+	// LS DB 연결 (비필수: KeyValueStore에 ADDR_LS/DBNAME_LS 등록 시에만 시도)
+	if EnvLS.MSSQL_ADDR != "" && EnvLS.MSSQL_DBLS != "" {
+		if err := MsConn.EnsureConnection("LS"); err != nil {
+			log.Printf("LS DB 연결 실패 (비필수): %v", err)
+			MsConn.SetUnavailable("LS")
+		}
 	}
 	fmt.Printf("%s [Init] MSSQL 연결 초기화 완료\n", GenerateTimestampedString())
 
