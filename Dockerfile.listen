@@ -1,0 +1,24 @@
+# ── restgo-listen 컨테이너 ─────────────────────────────────────────────────
+# 빌드:
+#   docker compose -f docker-compose.listen.yml build
+# 실행:
+#   docker compose -f docker-compose.listen.yml up -d
+# 로그:
+#   docker compose -f docker-compose.listen.yml logs -f
+# 중지:
+#   docker compose -f docker-compose.listen.yml down
+# ──────────────────────────────────────────────────────────────────────────
+
+FROM golang:1.25-alpine AS builder
+WORKDIR /build
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o RESTGo .
+
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates tzdata
+WORKDIR /app
+COPY --from=builder /build/RESTGo .
+COPY rules/ ./rules/
+CMD ["./RESTGo", "stock", "listen"]

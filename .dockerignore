@@ -1,0 +1,44 @@
+# 빌드 산출물 (새로 빌드하므로 제외)
+/RESTGo
+
+# 분석 출력 (필요 시 host 마운트)
+/zpicture/
+
+# Python venv
+venv/
+__pycache__/
+*.pyc
+
+# 자격증명 (런타임에 마운트)
+config.yaml
+
+# 도구 설정
+.telegram/
+.vscode/
+.claude/
+.idea/
+
+# OS·에디터 임시 파일
+.DS_Store
+*.swp
+*.swo
+*~
+
+# 연구 자료
+r_stg/
+zpicture/
+
+# Docker
+Dockerfile*
+docker-compose*
+
+# Git
+.git/
+.gitignore
+
+# 배포·운영 스크립트 (이미지엔 불필요)
+deploy/
+*.sh
+*.md
+pitasks/
+pidocs/
