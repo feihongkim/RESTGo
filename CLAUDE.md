@@ -5,14 +5,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 프로젝트 개요 및 목적
 
 **RESTGo**는 Go로 작성된 CLI 기반 운영 도구이자 퀀트 연구 플랫폼입니다. 크게 네 가지 역할을 합니다:
-1. **다중 MSSQL 쿼리** — 4개 DB(key/han/var/KIS2)에 직접 쿼리 실행
+1. **다중 MSSQL 쿼리** — 6개 DB(key/han/var/KIS2/tuf/LS)에 직접 쿼리 실행
 2. **주식 Box/매수·매도 분석** — C# `Stock1` 프로젝트의 핵심 분석 로직을 Go로 포팅한 `box/` + `indicator/` + `cond/` + `stg/` 패키지. 매수·매도 전략은 `rules/*.yaml`의 YAML 룰 엔진으로 정의
-3. **백테스트·전략 연구** — `study/` 패키지의 러너 12종 (그리드 서치, 엣지 검증, walk-forward, 페어 트레이딩, W패턴 스캔 등). 대상 데이터는 국내 일봉(KIS2 1.5년 / hannam 16년), 해외 일봉, Upbit 암호화폐 15분봉
+3. **백테스트·전략 연구** — `study/` 패키지의 러너 30개 파일 (그리드 서치, 엣지 검증, walk-forward, 페어 트레이딩, W패턴·volume_wave·mainbox_retest·descending_trendline 스캔 등). 대상 데이터는 국내 일봉(KIS2 약 19개월 / hannam 16년), 해외 일봉, Upbit 암호화폐 15분봉
 4. **Python 분석 스크립트 실행** — `py/` 디렉토리의 차트·백테스트·테마 전략 스크립트를 Go CLI에서 호출
 
 모든 DB 접속 정보는 AES-256-GCM으로 암호화되어 `config.yaml`에 저장됩니다.
 
-패키지 의존 방향은 단방향 계층입니다: `box`/`cond`/`indicator`/`console`(인프라) → `stg`(전략 엔진, box·cond만 의존) → `study`(연구 러너) → `stock`(CLI 라우터) → `main.go`
+패키지 의존 방향은 단방향 계층입니다: `box`/`cond`/`indicator`/`console`(인프라) → `stg`(전략 엔진, box·cond만 의존) → `study`(연구 러너) → `stock`(CLI 라우터) → `main.go`.
+`scheduler`(정기 배치)와 `cmd/boxcalc`(Box 로직 외부 노출용 정적 바이너리)가 별도로 붙습니다.
 
 ## 주요 명령어
 
@@ -166,7 +167,7 @@ C# 참조 프로젝트: `ssh feihong@192.168.3.120:/home/feihong/code/REST/RESTG
 | `stg/wpattern_analyze.go` | — (Go 신규) | 순수 W바텀(MIIIb) 패턴 분석기 `WPatternAnalyze` (DefBox 게이트 없음) |
 | `stg/wpattern_defbox.go` | — (Go 신규) | W바텀+DefBox 결합 분석기 `WDefBoxAnalyze` (W신호 50% 진입 + 20일 내 DefBox 돌파 시 추가 50%) |
 | `stg/combined_analyze.go` | — (Go 신규) | WD(분할진입) + S1(DefBox 단독 100% 진입) 합성 신호 단일 패스 탐지 `CombinedAnalyze` |
-| `study/` | — | 연구 러너 12종 (아래 "연구 인프라" 절 참조) |
+| `study/` | — | 연구 러너 30개 파일 (아래 "연구 인프라" 절 참조) |
 | `stock/handler.go` | — | CLI 라우터 — `analyze`/`batch`는 직접 처리, 연구 명령은 `study.*`로 위임 |
 | `py/` | — | Python 차트·백테스트·테마 전략 스크립트 |
 | `console/py_runner.go` | — | Go→Python 실행 래퍼 |
