@@ -1,18 +1,19 @@
 # RESTGo 시스템 아키텍처 분석
 
 > 작성자: Claude Code AI (pi coding agent)
-> 날짜: 2026-06-25
+> 최종 수정: 2026-07-17
 > 대상: RESTGo 프로젝트 전체 시스템 구조
 
 ---
 
 ## 1. 개요
 
-RESTGo는 Go 1.25.0 기반 CLI 운영 도구로, 크게 세 가지 역할을 수행한다:
+RESTGo는 Go 1.25.0 기반 CLI 운영 도구로, 크게 네 가지 역할을 수행한다:
 
 1. **다중 MSSQL 쿼리** — 4개 DB(key/han/var/KIS2)에 직접 SQL 실행
 2. **주식 Box/매수·매도 분석** — C# Stock1 프로젝트의 핵심 분석 로직을 Go로 포팅
-3. **Python 분석 스크립트 실행** — 차트·백테스트·테마 전략 스크립트 호출
+3. **백테스트·전략 연구** — `study/` 패키지의 러너 22종 (그리드 서치, 엣지 검증, walk-forward, 패턴 스캔 등)
+4. **Python 분석 스크립트 실행** — 차트·백테스트·테마 전략 스크립트 호출
 
 DB 접속 정보는 AES-256-GCM 암호화되어 `config.yaml`에 저장된다.
 
@@ -22,18 +23,19 @@ DB 접속 정보는 AES-256-GCM 암호화되어 `config.yaml`에 저장된다.
 
 | 지표 | 값 |
 |------|-----|
-| Go 파일 수 | 247개 |
-| 총 LOC | ~41,400 |
-| 테스트 파일 | 42개 |
-| YAML 룰 파일 | 46개 (전략 + ablation + archive + grid) |
-| Python 스크립트 | 34개 |
+| Go 파일 수 | 306개 |
+| 총 LOC | ~50,000+ |
+| 테스트 파일 | 58개 |
+| YAML 룰 파일 | 65개 (전략 + ablation + archive + grid + overlay) |
+| Python 스크립트 | 39개 |
 | Go 의존성 | 9개 |
 
 ### 주요 의존성
-- `go-sql-driver/mysql` — MSSQL 연결 (TDS 프로토콜)
-- `amqp091-go` — RabbitMQ 메시징
-- `yaml.v3` — YAML 룰 엔진 파싱
-- `zap` — 구조화 로깅
+- `github.com/denisenkom/go-mssqldb` — MSSQL 연결 (TDS 프로토콜)
+- `github.com/rabbitmq/amqp091-go` — RabbitMQ 메시징
+- `gopkg.in/yaml.v2` / `gopkg.in/yaml.v3` — YAML 룰 엔진 파싱
+- `go.uber.org/zap` — 구조화 로깅
+- `golang.org/x/crypto` — 암호화 유틸리티
 
 ---
 
@@ -67,12 +69,12 @@ RESTGo/
 │   ├── defbox.go              # DefBox 생성 조건 평가
 │   ├── box_price.go           # 구간 최고/최저가 계산
 │   ├── box_creation.go        # Box 생성·추가 서비스
-│   ├── candle_loader.go       # KIS2 DB 캔들 조회
+│   ├── candle_loader.go       # KIS2·hannam·해외 DB 캔들 조회
 │   ├── candle_loader_pair.go  # Pair 종목 캔들 로더
 │   └── candle_loader_upbit.go # Upbit 거래소 캔들 로더
 │
 ├── indicator/                 # [기술적 지표] Rolling sum 기반 O(N) 계산
-│   ├── candle_processor.go    # 스케일링·MA(5/20/60/120)·ATR
+│   ├── candle_processor.go    # 스케일링·MA(5/20/60/120/200)·ATR
 │   ├── bollinger.go           # Bollinger Bands (period=20, 2σ)
 │   ├── rsi.go                 # RSI (Wilder, period=14)
 │   ├── macd.go                # MACD
@@ -87,12 +89,20 @@ RESTGo/
 │   └── pair.go                # Pair 트레이딩 지표
 │
 ├── cond/                      # [조건 함수] 매수·매도 조건 평가 (순수 함수)
-│   ├── buy_conditions.go      # Box 구조 기반 매수 조건 (12개)
+│   ├── buy_conditions.go      # Box 구조 기반 매수 조건
 │   ├── buy_conditions_extra.go# MA·캔들패턴·관통·MultiDef 조건
-│   ├── buy_indicator.go       # 지표 기반 매수 조건 16종 (RSI 5·BB 5·MA 6)
+│   ├── buy_indicator.go       # 지표 기반 매수 조건 16종 (RSI/BB/MA)
 │   ├── buy_indicator_15m.go   # 15분봉 지표 조건
 │   ├── buy_oscillator.go      # 오실레이터·관통 옵션 + 공용 헬퍼
 │   ├── buy_followup.go        # ShortRange·거래대금 게이트·재진입 조건
+│   ├── buy_triggers.go        # 트리거(edge) 조건 함수
+│   ├── buy_volume_wave.go     # 거래량 파동(Volume Wave) 조건
+│   ├── buy_pullback.go        # Pullback 매수 조건
+│   ├── buy_regime.go          # Regime(시장 국면) 판별 조건
+│   ├── buy_doublebump.go      # DoubleBump(이중 충돌) 패턴 조건
+│   ├── buy_stg11.go           # STG11 돌파후행 전략 조건
+│   ├── buy_stg6.go            # STG6 전략 조건
+│   ├── buy_rstg_more.go       # r_stg 추가 조건
 │   │
 │   ├── sell_profit_taking.go  # 익절 조건 (GapUp, BBUpperBreakout)
 │   ├── sell_loss_cutting.go   # 손절 조건 (EarlyDrop, MainBoxBreak 등)
@@ -103,55 +113,100 @@ RESTGo/
 │   ├── sell_adaptive_stop.go  # 적응형 손절
 │   ├── sell_recovery.go       # 회복 감지 (Composite Path)
 │   ├── sell_holding_extension.go # 보유 연장 평가
-│   └── sell_helpers.go        # 매도 공용 헬퍼
+│   ├── sell_helpers.go        # 매도 공용 헬퍼
+│   ├── sell_hns.go            # HNS(헤드앤숄더) 매도 조건
+│   └── sell_mtop.go           # MTop 매도 조건
 │
 ├── stg/                       # [전략 엔진] YAML 룰 엔진·분석 메인루프
 │   ├── analyzer.go            # 분석 메인루프 (Box/DefBox + 돌파 게이트)
-│   ├── combined_analyze.go    # 복합 시간봉 분석 (일봉+15분봉)
 │   ├── buy_rule_engine.go     # YAML 매수 룰 평가 엔진
-│   ├── buy_conditions_registry.go # 조건명 → cond 함수 매핑
+│   ├── buy_conditions_registry.go # 조건명 → cond 함수 매핑 (81종 등록)
 │   ├── buy_followup.go        # S13~S20 후속 매수 처리 (REST2)
 │   ├── buy_settings.go        # 분석 설정값 (Settings struct)
 │   │
+│   ├── trigger_registry.go    # 트리거(edge 이벤트) 등록소 (15종 등록)
+│   ├── armed_trigger.go       # Armed Trigger (장전→발화) 상태머신 엔진
+│   ├── armed_trigger_registry.go # Armed 트리거 등록소 (8종 등록)
+│   ├── trigger_scan.go        # 범용 Trigger×Condition 조합 측정 러너
+│   │
 │   ├── sell_rule_engine.go    # YAML 매도 룰·5-Path 결정 엔진
 │   ├── sell_executor.go       # 부분 매도 실행·가중평균 수익률
-│   ├── sell_conditions_registry.go # 매도 조건명 레지스트리
+│   ├── sell_conditions_registry.go # 매도 조건명 레지스트리 (24종 등록)
 │   ├── sell_settings.go       # 매도 설정값 (SellSettings struct)
 │   ├── sell_tracker.go        # 매도 트래킹 (count_min, ratio_min)
 │   ├── sell_15m.go            # 15분봉 매도 평가
 │   │
 │   ├── types.go               # 신호·결과 타입 (AnalysisResult, Positions)
 │   ├── wpattern_analyze.go    # W-패턴 분석
-│   └── wpattern_defbox.go     # W-패턴 DefBox
+│   ├── wpattern_defbox.go     # W-패턴 + DefBox 결합 분석
+│   ├── combined_analyze.go    # 복합 시간봉 분석 (일봉+15분봉)
+│   ├── volume_wave_analyze.go # Volume Wave 신호 분석기
+│   ├── volume_wave_pullback.go# Volume Wave + Pullback 결합 분석
+│   ├── descending_trendline_analyze.go # 하락추세선 분석기
+│   ├── mainbox_retest_analyze.go # MainBox 재시험 분석기
+│   ├── hns_analyze.go         # HNS(헤드앤숄더) 분석기
+│   ├── mpattern_analyze.go    # MTop 패턴 분석기
+│   ├── pullback_analyze.go    # Pullback 분석기
+│   ├── wgc_analyze.go         # WGC(W바텀 GoldenCross) 분석기
+│   └── overlay_density.go     # Overlay 밀도 판정 (W중력)
 │
 ├── stock/                     # [CLI 핸들러] 명령어 → 분석 파이프라인
-│   └── handler.go             # CLI 명령어 라우팅 구현
+│   └── handler.go             # CLI 명령어 라우팅 (22개 연구 명령 포함)
 │
-├── study/                     # [연구 도구] 백테스트·통계·스캔
-│   ├── walk_forward.go        # Walk-forward 분석
+├── study/                     # [연구 도구] 백테스트·통계·스캔·차트
+│   ├── grid.go                # Grid Search
+│   ├── edge.go                # Edge Test / Baseline
+│   ├── walk_forward.go        # Walk-Forward 분석
 │   ├── baseline_30m.go        # 30분봉 베이스라인
 │   ├── breakdown.go           # 브레이크다운 분석
-│   ├── combined_scan.go       # 복합 스캔
-│   ├── edge.go                # Edge 분석
 │   ├── event_study.go         # 이벤트 스터디
-│   ├── grid.go                # 그리드 전략
-│   ├── miiib_scan.go          # MIIIB 패턴 스캔
 │   ├── pair.go                # Pair 트레이딩 분석
 │   ├── stats.go               # 통계 유틸리티
 │   ├── wbottom_scan.go        # W-bottom 스캔
-│   └── wdefbox_scan.go        # W-DefBox 스캔
+│   ├── miiib_scan.go          # MIIIB 패턴 스캔
+│   ├── wdefbox_scan.go        # W-DefBox 조합 스캔
+│   ├── combined_scan.go       # 복합 시간봉 스캔
+│   ├── mtop_scan.go           # MTop 패턴 스캔
+│   ├── hns_scan.go            # HNS 패턴 스캔
+│   ├── pullback_scan.go       # Pullback 스캔
+│   ├── wgc_scan.go            # WGC 스캔
+│   ├── trigger_scan.go        # Trigger Scan
+│   ├── volume_wave_scan.go    # Volume Wave 스캔
+│   ├── volume_wave_matrix.go  # Volume Wave 매트릭스 분석
+│   ├── volume_wave_chart.go   # Volume Wave 차트 샘플
+│   ├── volume_wave_box_study.go   # Volume Wave + Box 스터디
+│   ├── volume_wave_strict_study.go# Volume Wave 엄격 스터디
+│   ├── mainbox_retest_study.go    # MainBox 재시험 스터디
+│   ├── mainbox_retest_s1_study.go # S1 MainBox 재시험
+│   ├── mainbox_retest_refine_study.go  # MainBox 정제 스터디
+│   ├── mainbox_retest_temporal.go # MainBox 시간적 분석
+│   ├── descending_trendline_study.go      # 하락추세선 스터디
+│   ├── descending_trendline_ma_study.go   # 하락추세선+MA 스터디
+│   ├── descending_trendline_sideways_study.go # 하락추세선 횡보 스터디
+│   └── descending_trendline_chart.go      # 하락추세선 차트
 │
-├── rules/                     # [전략 정의] YAML 룰 파일
-│   ├── strategy1.yaml         # 매수 전략 (SingleDef 5종 + MultiDef 3종)
-│   ├── strategy2.yaml         # 지표 기반 매수 전략 6종 (I01~I06)
-│   ├── strategy3.yaml         # 추가 전략 변형
-│   ├── strategy_bb_*.yaml     # Bollinger 기반 전략
-│   ├── sell_strategy1.yaml    # 매도 룰 21종 + 5-Path 설정
-│   ├── sell_strategy1_positive_only.yaml
-│   ├── sell_strategy1_posOnly_*.yaml
-│   ├── grid_*.yaml            # 그리드 전략 설정
-│   ├── ablation/              # 28개 ablation 실험 YAML
-│   └── archive/               # 9개 보관된 실험 YAML
+├── rules/                     # [전략 정의] YAML 룰 파일 (65개)
+│   ├── strategy1.yaml         # 기본 매수 전략 (SingleDef 5종 + MultiDef 3종)
+│   ├── strategy1_gc.yaml      # Golden Cross 확증 변형
+│   ├── strategy1_s03s23.yaml  # S03+S23 조합 전략
+│   ├── buy_indicator.yaml     # 지표 기반 매수 전략 6종 (I01~I06)
+│   ├── buy_bb_pure.yaml       # Bollinger 3대 방법 (MIIIb~MI)
+│   ├── buy_bb_hybrid.yaml     # Box + BB 복합 4룰 (SH1~SH4)
+│   ├── buy_trigger_example.yaml # 트리거 문법 예시
+│   ├── buy_crypto_15m.yaml    # 암호화폐 15분봉 다중 트리거 (보류)
+│   ├── buy_wdefbox.yaml       # W-DefBox 결합 매수 전략
+│   ├── buy_wdefbox_gc.yaml    # W-DefBox + Golden Cross
+│   ├── buy_stg11_15m.yaml     # STG11 15분봉 전략
+│   ├── grid_crypto_*.yaml     # 암호화폐 그리드 서치 (3개)
+│   ├── grid_stg11.yaml        # STG11 그리드
+│   ├── overlay_wdefbox.yaml   # W중력 오버레이 밀도 게이트
+│   ├── sell_default.yaml      # 기본 매도 전략 (21룰 + 5-Path)
+│   ├── sell_positive_only.yaml    # 익절 전용
+│   ├── sell_positive_only_mh25.yaml # 익절 + max_holding 25
+│   ├── sell_s03s23.yaml       # S03+S23 전용 매도
+│   ├── sell_wdefbox.yaml      # W-DefBox 전용 매도
+│   ├── ablation/              # 소거 실험 YAML (34개)
+│   └── archive/               # 보관된 과거 실험 YAML (10개)
 │
 ├── py/                        # [Python 분석] 차트·백테스트·테마 전략
 │   ├── analysis/              # Box 차트 생성, MA5 변곡 분석
@@ -160,7 +215,12 @@ RESTGo/
 │   ├── strategy/theme/        # 외국인 수급 기반 테마 전략 4종
 │   └── common/                # DB 연결 공통 모듈
 │
-└── zpicture/                  # 분석 결과 이미지 저장소
+├── r_stg/                     # [레거시] 과거 전략 노트 (AU3~전략16)
+├── pitasks/                   # [Pi 작업 명세] 연구 태스크 정의 (28개)
+├── pidocs/                    # [Pi 문서] 프로젝트 기술 문서
+├── deploy/                    # 배포 스크립트
+├── .telegram/                 # Telegram 봇 설정
+└── zpicture/                  # 분석 결과 저장소 (JSON + 차트 이미지)
 ```
 
 ---
@@ -256,7 +316,7 @@ console.Init()
 ## 10. 원격 서버 접속
 
 - SSH: `ssh feihong@192.168.3.120` (hostname: `white`)
-- SSH 키: `~/.ssh/id_rsa` (RSA 4096-bit)
+- SSH 키: `~/.ssh/id_ed25519` (ED25519)
 - C# 참조 프로젝트: `/home/feihong/code/REST/RESTG/Stock1/` (branch: `feature/multi-position-sell-strategy`)
 
 ---
@@ -269,12 +329,13 @@ console.Init()
 3. **YAML 기반 전략**: 전략 수정 시 재빌드 불필요, ablation 실험 체계 우수
 4. **O(N) 지표 계산**: Rolling sum 기법으로 Bollinger, MA 등 효율적 계산
 5. **C# 포팅 충실도**: 원본 로직을 정확히 포팅하면서 Go 이디엄 적용
+6. **확장성**: Trigger/Armed Trigger 아키텍처로 코드 변경 없이 YAML에서 무한 전략 조합 가능
 
 ### 약점 / 개선 포인트
 1. **싱글턴 남용**: 전역 변수로 인해 테스트 격리 어려움, 의존성 주입 부재
 2. **RabbitMQ 의존성**: 로깅 시스템이 RabbitMQ에 강결합 → 연결 실패 시 로그 유실 위험
 3. **에러 처리 불일치**: 일부 함수는 에러를 반환하지 않고 내부에서 삼키는 패턴
-4. **테스트 커버리지**: 247개 중 42개(17%)만 테스트 파일 존재, Study 패키지 테스트 전무
+4. **테스트 커버리지**: 306개 중 58개(19%)만 테스트 파일 존재, Study 패키지 테스트 전무
 5. **15분봉·일봉 결합**: `combined_analyze.go`가 두 시간 프레임을 단단히 결합 → 확장성 제한
 
 ---
@@ -285,5 +346,6 @@ console.Init()
 |------|--------|------|
 | RabbitMQ 장애 | **HIGH** | 로그 유실 + Telegram 알림 중단 |
 | config.yaml 유출 | **CRITICAL** | DB 크리덴셜 노출 (AES 암호화는 방어선) |
-| Go 버전 의존성 | LOW | 1.25.0은 정식 릴리즈, LTS 아님 → 마이그레이션 필요 가능 |
+| Go 버전 의존성 | LOW | 1.25.0 — 마이그레이션 필요 가능 |
 | C#-Go 불일치 | MEDIUM | 포팅 오류 시 분석 결과 차이 발생 (ablation으로 검증 중) |
+| 문서 최신성 | MEDIUM | 코드 변경 속도가 문서 업데이트보다 빠름 |
