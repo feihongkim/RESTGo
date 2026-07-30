@@ -18,6 +18,7 @@
 # cron 예 (host, hannam 일봉 적재 완료 시각에 맞춰 조정):
 #   30 16 * * 1-5  cd /home/feihong/code/REST/RESTGo && ./daily_batch.sh >> zpicture/daily_batch.log 2>&1
 set -uo pipefail
+export RESTGO_DEGRADE_KIS2=true
 cd "$(dirname "$0")"
 TODAY=$(date +%Y%m%d)
 DAYS=${1:-250}

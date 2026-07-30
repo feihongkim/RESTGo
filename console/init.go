@@ -60,20 +60,21 @@ func init() {
 		}
 	}
 
-	// KIS DB 설정 미등록 시 han과 동일 서버 사용
-	if EnvKIS.MSSQL_ADDR == "" {
-		EnvKIS.MSSQL_ADDR = EnvHan.MSSQL_ADDR
-	}
-	if EnvKIS.MSSQL_DBKIS == "" {
-		EnvKIS.MSSQL_DBKIS = "KIS2"
-	}
-
 	// TUF DB 기본값 (KeyValueStore에 미등록 시)
 	if EnvTUF.MSSQL_ADDR == "" {
 		EnvTUF.MSSQL_ADDR = "tuf.tail5b4272.ts.net"
 	}
 	if EnvTUF.MSSQL_DBTUF == "" {
 		EnvTUF.MSSQL_DBTUF = "Upbit"
+	}
+
+	// KIS DB 설정 미등록 시 tuf 서버 사용 — KIS2 DB는 tuf 서버에 있음
+	// (KeyValueStore에 ADDR_KIS 등록 시 그 값이 우선. 과거 han 폴백은 Ping 실패만 유발해 tuf로 교체)
+	if EnvKIS.MSSQL_ADDR == "" {
+		EnvKIS.MSSQL_ADDR = EnvTUF.MSSQL_ADDR
+	}
+	if EnvKIS.MSSQL_DBKIS == "" {
+		EnvKIS.MSSQL_DBKIS = "KIS2"
 	}
 
 	// 나머지 DB 연결
