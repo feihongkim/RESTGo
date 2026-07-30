@@ -3,11 +3,20 @@
 # host network 사용 → localhost의 RabbitMQ / MSSQL(han)에 직접 접속.
 # config.yaml, zpicture/ 디렉토리는 host에서 bind mount.
 #
-# 사용:
-#   docker compose -f docker-compose.listen.yml build
-#   docker compose -f docker-compose.listen.yml up -d
+# 사용 (⚠️ 반드시 저장소 루트 /home/feihong/code/RESTGo 에서 실행):
+#   docker compose -f docker-compose.listen.yml up -d --build
 #   docker compose -f docker-compose.listen.yml logs -f
 #   docker compose -f docker-compose.listen.yml down
+#
+# 2026-07-31 사고 기록 — 두 가지가 조용히 어긋나 있었다:
+#   ① 마운트가 존재하지 않는 경로(/home/feihong/code/REST/RESTGo/...)를 가리키고 있었다.
+#      아래 volumes는 상대경로라 compose를 **어느 디렉토리에서 실행하느냐**로 결정된다.
+#      잘못된 위치에서 up 하면 Docker가 없는 경로에 빈 디렉토리를 만들어
+#      config.yaml이 디렉토리가 되고 zpicture 쓰기가 유령 디렉토리로 나간다.
+#      실행 중인 컨테이너는 멀쩡해 보이므로 재시작 전까지 드러나지 않는다.
+#   ② 이미지가 2주간 재빌드되지 않아 낡은 바이너리와 낡은 rules/*.yaml이 구워진 채 돌았다.
+#      Dockerfile이 rules/를 COPY하므로 **룰을 고치면 이미지도 다시 구워야 한다.**
+#      코드·룰 변경 후에는 항상 `up -d --build`.
 
 services:
   listen:

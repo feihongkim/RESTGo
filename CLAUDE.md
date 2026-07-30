@@ -243,6 +243,19 @@ C# 참조 프로젝트: `ssh feihong@192.168.3.120:/home/feihong/code/REST/RESTG
 - 스크립트 루트: `/home/feihong/code/RESTGo` (host 서버)
 - `console/py_runner.go`의 `PythonBin`, `ProjectRoot` 상수로 관리
 
+### 실시간 listen 컨테이너 (`restgo-listen`)
+
+`stock listen`을 상시 구동하는 Docker 컨테이너입니다 (`docker-compose.listen.yml`, `network_mode: host`, `restart: unless-stopped`).
+
+```bash
+# ⚠️ 반드시 저장소 루트에서 — volumes가 상대경로라 실행 위치가 마운트를 결정한다
+cd /home/feihong/code/RESTGo && docker compose -f docker-compose.listen.yml up -d --build
+```
+
+- **코드·룰 변경 시 반드시 `--build`** — Dockerfile이 `rules/`를 COPY하므로, 재빌드하지 않으면 낡은 바이너리와 낡은 YAML이 구워진 채 계속 돕니다 (2026-07-31: 2주 방치 확인)
+- **잘못된 디렉토리에서 `up` 하면 조용히 깨집니다** — Docker가 없는 경로에 빈 디렉토리를 만들어 `config.yaml`이 디렉토리가 되고 `zpicture` 쓰기가 유령 디렉토리로 나갑니다. 실행 중인 컨테이너는 멀쩡해 보여 재시작 전까지 드러나지 않습니다
+- 상태 확인: `docker logs restgo-listen --tail 20` — 기동 시 큐·전략·밀도 게이트 판정이 찍힙니다
+
 ### 정기 배치 (`scheduler/` — 2026-07-31 신설)
 
 crontab 대신 상주 스케줄러가 배치를 돌립니다. 기존 cron 항목이 존재하지 않는 경로를 가리켜 `&&` 단락으로 2주간(20260717~) 조용히 실패한 사고가 계기입니다 — cron은 실패를 알려주지 않습니다.
