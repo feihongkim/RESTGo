@@ -41,6 +41,13 @@ func BuildSchedule() []Task {
 			Script: "paper_wd_daily.sh", LogFile: "zpicture/paper_wd/daily.log",
 			Condition: isTradingDay,
 		},
+		{
+			// 월간 리포트는 원장 JSON만 읽으므로 거래일일 필요가 없다.
+			// 거래일 조건을 걸면 1일이 주말·휴장일인 달은 리포트가 통째로 누락된다.
+			Label: "paper_wd_report", Time: "09:00",
+			Script: "paper_wd_report_monthly.sh", LogFile: "zpicture/paper_wd/report.log",
+			Condition: isFirstOfMonth,
+		},
 	}
 }
 
@@ -51,4 +58,9 @@ func isTradingDay(t time.Time) bool {
 		return false
 	}
 	return !isKRXHoliday(t)
+}
+
+// isFirstOfMonth 는 매달 1일인지 반환한다 (요일·휴장일 무관).
+func isFirstOfMonth(t time.Time) bool {
+	return t.Day() == 1
 }

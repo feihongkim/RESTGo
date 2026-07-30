@@ -241,3 +241,29 @@ func itoa(n int) string {
 	}
 	return string(b)
 }
+
+// 월간 리포트는 1일에만, 요일·휴장일과 무관하게 실행돼야 한다.
+// 거래일 조건을 걸면 1일이 주말인 달은 리포트가 통째로 빠진다.
+func TestIsFirstOfMonth(t *testing.T) {
+	holidaySet = map[string]bool{"20260101": true} // 신정 — 휴장일이지만 리포트는 돌아야 함
+	defer func() { holidaySet = nil }()
+
+	cases := []struct {
+		date string
+		want bool
+		why  string
+	}{
+		{"2026-08-01", true, "토요일 1일"},
+		{"2026-11-01", true, "일요일 1일"},
+		{"2026-01-01", true, "휴장일(신정) 1일"},
+		{"2026-09-01", true, "화요일 1일"},
+		{"2026-07-31", false, "말일"},
+		{"2026-08-02", false, "2일"},
+	}
+	for _, c := range cases {
+		d, _ := time.ParseInLocation("2006-01-02", c.date, loc)
+		if got := isFirstOfMonth(d); got != c.want {
+			t.Errorf("isFirstOfMonth(%s) = %v, want %v (%s)", c.date, got, c.want, c.why)
+		}
+	}
+}

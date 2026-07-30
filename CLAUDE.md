@@ -248,6 +248,7 @@ crontab 대신 상주 스케줄러가 배치를 돌립니다. 기존 cron 항목
 |------|------|----------|------|
 | `daily_batch` | 16:30 | `daily_batch.sh` | 거래일(월~금 − KRX 휴장일) |
 | `paper_wd` | 16:45 | `paper_wd_daily.sh` | 거래일 |
+| `paper_wd_report` | 매달 1일 09:00 | `paper_wd_report_monthly.sh` | 1일 (요일·휴장일 무관 — 원장 JSON만 읽으므로 거래일 조건을 걸면 1일이 주말인 달은 리포트가 누락됨). 대상 월은 **직전 달** |
 
 - 스케줄 정의: `scheduler/tasks.go`의 `BuildSchedule()`. 엔진은 `scheduler/scheduler.go` (KIS2 `cmd/scheduler` 컨벤션)
 - **기동 즉시 검증**: 스크립트 존재·실행권한·라벨 중복·시각 형식·선행작업 유효성 (`validateSchedule`). 실패 시 기동 거부

@@ -141,10 +141,10 @@ func (s *Scheduler) shouldRun(task Task, now time.Time) bool {
 	if _, done := s.completed[key]; done {
 		return false
 	}
-	// 조건 미충족(휴장일 등)은 그날 완료로 찍어 매 tick 재평가를 막는다.
+	// 조건 미충족(비거래일·해당 일자 아님 등)은 그날 완료로 찍어 매 tick 재평가를 막는다.
 	if task.Condition != nil && !task.Condition(now) {
 		s.completed[key] = now
-		logf("%s 스킵 — 비거래일 (%s)", task.Label, s.today)
+		logf("%s 스킵 — 실행 조건 미충족 (%s)", task.Label, s.today)
 		return false
 	}
 	if task.DependsOn != "" {
