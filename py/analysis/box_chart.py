@@ -1,13 +1,14 @@
 """
 000020 (동화약품) 180일 Box 분석 차트 생성
 - DB에서 데이터 조회
-- MA, Gradient 계산 (CandleProcessor.cs 로직 포팅)
-- Box/DefBox 분석 (curvature.py 로직 포팅)
+- MA 계산 (차트 표시용)
+- Box/DefBox 분석: Go boxcalc 바이너리 위임 (단일 소스: RESTGo box/·stg/)
 - 캔들스틱 차트에 Box 표시
 - Telegram으로 이미지 전송
 """
 import sys
-import math
+import json
+import subprocess
 import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
@@ -70,15 +71,6 @@ def calc_ma(close: np.ndarray, period: int) -> np.ndarray:
     return ma
 
 
-def calc_gradient(ma: np.ndarray) -> np.ndarray:
-    """MA 기울기: ((MA[i] - MA[i-1]) / MA[i]) * 100"""
-    grad = np.zeros(len(ma))
-    for i in range(1, len(ma)):
-        if ma[i] != 0:
-            grad[i] = ((ma[i] - ma[i - 1]) / ma[i]) * 100.0
-    return grad
-
-
 def prepare_candles(df: pd.DataFrame) -> list:
     """DataFrame을 캔들 딕셔너리 리스트로 변환 (스케일 없이 원본 가격 사용)"""
     close = df['close'].values
@@ -89,10 +81,6 @@ def prepare_candles(df: pd.DataFrame) -> list:
     ma5 = calc_ma(close, 5)
     ma20 = calc_ma(close, 20)
     ma60 = calc_ma(close, 60)
-
-    grad5 = calc_gradient(ma5)
-    grad20 = calc_gradient(ma20)
-    grad60 = calc_gradient(ma60)
 
     candles = []
     for i in range(len(df)):
@@ -106,10 +94,6 @@ def prepare_candles(df: pd.DataFrame) -> list:
             'ma5': ma5[i],
             'ma20': ma20[i],
             'ma60': ma60[i],
-            'gradient': grad5[i],
-            'gradient20': grad20[i],
-            'gradient60': grad60[i],
-            'curvekey': 0,
         })
     return candles
 
@@ -126,233 +110,45 @@ BOXTYPE_SUPPORT = 0    # 지지선 (저점)
 BOXTYPE_RESIST  = 1    # 저항선 (고점)
 
 
-def should_reverse_to_bearish(cur, prev1, prev2) -> bool:
-    """상승->하락 전환 조건"""
-    def accel_down(c, p1, p2):
-        cs = abs(c['gradient']) - abs(p1['gradient'])
-        ps = abs(p1['gradient']) - abs(p2['gradient'])
-        return (c['gradient'] < 0 and
-                ((cs > 0 and p1['gradient'] < 0) or (ps > 0 and p1['gradient'] < 0)))
-
-    def strong_down(c, p):
-        return c['gradient'] < -0.17 or p['gradient'] < -0.17
-
-    def short_weak_long_up(c, p1, p2):
-        below = p2['close'] < p2['ma5'] and p1['close'] < p1['ma5'] and c['close'] < c['ma5']
-        reversal = p2['gradient'] >= 0 and p1['gradient'] >= 0 and c['gradient'] < 0
-        long_up = c['gradient20'] > c['gradient60'] and c['gradient60'] > 0
-        return below and reversal and long_up
-
-    return (accel_down(cur, prev1, prev2) and strong_down(cur, prev1)) or \
-           short_weak_long_up(cur, prev1, prev2)
-
-
-def should_reverse_to_bullish(cur, prev1, prev2) -> bool:
-    """하락->상승 전환 조건"""
-    def accel_up(c, p1, p2):
-        cs = abs(c['gradient']) - abs(p1['gradient'])
-        ps = abs(p1['gradient']) - abs(p2['gradient'])
-        return (c['gradient'] > 0 and
-                ((cs > 0 and p1['gradient'] > 0) or (ps > 0 and p1['gradient'] > 0)))
-
-    def strong_up(c, p):
-        return c['gradient'] > 0.17 or p['gradient'] > 0.17
-
-    return accel_up(cur, prev1, prev2) and strong_up(cur, prev1)
-
-
-def find_highest(candles, start, end):
-    best = {'price': 0, 'price_origin': 0, 'pos': 0, 'date': ''}
-    for i in range(start, min(end, len(candles))):
-        if candles[i]['high'] > best['price']:
-            best = {'price': candles[i]['high'], 'price_origin': candles[i]['high'],
-                    'pos': i, 'date': candles[i]['date']}
-    return best
-
-
-def find_lowest(candles, start, end):
-    best = {'price': 1e9, 'price_origin': 1e9, 'pos': 0, 'date': ''}
-    for i in range(start, min(end, len(candles))):
-        if candles[i]['low'] < best['price']:
-            best = {'price': candles[i]['low'], 'price_origin': candles[i]['low'],
-                    'pos': i, 'date': candles[i]['date']}
-    return best
-
-
-def find_defbox_prices(candles, start_pos, end_pos):
-    """DefBox 계산용 구간 가격 탐색"""
-    start = max(0, start_pos - 1)
-    high_box = 0.0
-    close_box = 0.0
-    open_box = 0.0
-    high_pos = 0
-    for j in range(start, min(end_pos + 1, len(candles))):
-        if candles[j]['high'] > high_box:
-            high_box = candles[j]['high']
-            high_pos = j
-        if candles[j]['close'] > close_box:
-            close_box = candles[j]['close']
-        if candles[j]['open'] > open_box:
-            open_box = candles[j]['open']
-    return high_box, close_box, open_box, high_pos
-
-
-def is_box_breakout(high_box, close_box, open_box, box_price, box_pos, high_pos) -> bool:
-    return (high_box >= box_price and
-            close_box <= box_price and
-            open_box <= box_price and
-            box_pos != high_pos)
-
-
-def calc_box_damage(candles, box_price, start_pos, end_pos) -> int:
-    damage = 0
-    for i in range(start_pos + 3, min(end_pos, len(candles))):
-        if i >= 2:
-            if (candles[i-2]['close'] <= box_price and
-                candles[i-1]['close'] > box_price and
-                candles[i]['close'] > box_price):
-                damage += 1
-    return damage
-
-
-def make_box(date, pos, price, curve_pos, boxtype, kind):
-    return {
-        'date': date, 'pos': pos, 'price': price,
-        'curve_pos': curve_pos, 'boxtype': boxtype,
-        'kind': kind, 'def_list': [], 'main_def_link': []
-    }
-
-
-def add_high_box(candles, box_list, box_day, box_price, curve_pos):
-    if box_list:
-        last = box_list[-1]
-        if last['kind'] == KIND_DEF and last['pos'] == box_day and last['price'] == box_price:
-            return
-    box = make_box(candles[box_day]['date'], box_day, box_price, curve_pos, BOXTYPE_RESIST, KIND_BOX)
-    box_list.append(box)
-
-
-def add_low_box(candles, box_list, low_pos, box_price, curve_pos):
-    if box_list:
-        last = box_list[-1]
-        if last['kind'] == KIND_DEF and last['pos'] == low_pos and last['price'] == box_price:
-            return
-    box = make_box(candles[low_pos]['date'], low_pos, box_price, curve_pos, BOXTYPE_SUPPORT, KIND_BOX)
-    box_list.append(box)
-
-
-def analyze_curvature(candles, box_list, pos, exposition) -> int:
-    if pos < 2:
-        return 0
-    cur, prev1, prev2 = candles[pos], candles[pos-1], candles[pos-2]
-    prev_key = prev1['curvekey']
-
-    if prev_key > 0:
-        if should_reverse_to_bearish(cur, prev1, prev2):
-            h = find_highest(candles, exposition, pos)
-            if h['price'] > 0:
-                add_high_box(candles, box_list, h['pos'], h['price'], pos)
-            return prev_key * -1
-        return prev_key
-    elif prev_key < 0:
-        if should_reverse_to_bullish(cur, prev1, prev2):
-            l = find_lowest(candles, exposition, pos)
-            if l['price'] < 1e9:
-                add_low_box(candles, box_list, l['pos'], l['price'], pos)
-            return prev_key * -1
-        return prev_key
-    return prev_key
-
-
-def check_and_create_defbox(candles, box_list, pos, def_checker_ref, damage_limit=0):
-    if len(box_list) < 2 or pos < 1:
-        return
-    prev_key = candles[pos-1]['curvekey']
-    if prev_key <= 0:
-        return
-
-    cur = candles[pos]
-    prev = candles[pos-1]
-
-    # MA5 하향 돌파 + 마지막 박스가 지지선
-    if not (cur['close'] < cur['ma5'] and prev['close'] >= prev['ma5']):
-        return
-    if not (box_list[-1]['boxtype'] == BOXTYPE_SUPPORT):
-        return
-
-    # 현재 위치 이전의 박스 수
-    box_index = sum(1 for b in box_list if b['pos'] < pos)
-    if box_index <= 0:
-        return
-
-    exposition = box_list[box_index - 1]['curve_pos']
-    high_box, close_box, open_box, high_pos = find_defbox_prices(candles, exposition, pos)
-
-    for i in range(box_index - 1):
-        b = box_list[i]
-        if b['boxtype'] != BOXTYPE_RESIST:
-            continue
-        if not is_box_breakout(high_box, close_box, open_box, b['price'], b['pos'], high_pos):
-            continue
-        damage = calc_box_damage(candles, b['price'], b['pos'], pos)
-        if damage > damage_limit:
-            continue
-
-        # MainBox로 승격
-        if b['kind'] != KIND_DEF:
-            b['kind'] = KIND_MAIN
-        b['def_list'].append(pos)
-
-        # 기존 DefBox 찾기
-        existing_idx = next((j for j in range(len(box_list)-1, -1, -1)
-                             if box_list[j]['kind'] == KIND_DEF and box_list[j]['pos'] == high_pos), -1)
-
-        if existing_idx >= 0:
-            if i not in box_list[existing_idx]['main_def_link']:
-                box_list[existing_idx]['main_def_link'].append(i)
-        else:
-            # ShouldUpdateDefBox 체크
-            last = box_list[-1]
-            if last['pos'] != high_pos or abs(last['price'] - b['price']) > 0.0001:
-                def_box = make_box(candles[high_pos]['date'], high_pos, b['price'],
-                                   pos, BOXTYPE_RESIST, KIND_DEF)
-                def_box['main_def_link'] = [i]
-                box_list.append(def_box)
-
-        def_checker_ref[0] += 1
-
-
-def calc_exposition(last_box) -> int:
-    if last_box['pos'] + 1 >= last_box['curve_pos'] - 3:
-        return last_box['pos'] + 1
-    return last_box['curve_pos'] - 2
-
-
 def run_box_analysis(candles, damage_limit=0) -> list:
-    """메인 분석 루프"""
-    box_list = []
-    def_checker = [0]
-    exposition = 0
+    """Box 분석 — Go boxcalc 바이너리에 위임한다.
 
-    if len(candles) < 6:
-        return box_list
+    2026-07-30: Python 자체 구현(curvature/DefBox 포팅)을 폐기하고 Go box/·stg/를
+    단일 소스로 통일했다. boxcalc는 RESTGo 저장소에서 정적 빌드된다:
+        CGO_ENABLED=0 go build -o boxcalc ./cmd/boxcalc   (또는 deploy/build_boxcalc.sh)
+    경로는 RESTGO_BOXCALC 환경변수 또는 프로젝트 루트의 ./boxcalc.
 
-    # 캔들[5] 초기 CurveKey 설정
-    candles[5]['curvekey'] = 1 if candles[5]['gradient'] >= 0 else -1
+    damage_limit 인수는 하위 호환용으로만 남겨 두었다 — boxcalc는 임베드된
+    strategy1 settings(DamOption)를 사용하므로 0이 아닌 값은 무시된다.
+    """
+    if damage_limit != 0:
+        print(f'경고: damage_limit={damage_limit}은 무시됩니다 (boxcalc는 strategy1 settings 사용)')
 
-    for i in range(6, len(candles)):
-        # DefBox 체크 (curvature 전)
-        check_and_create_defbox(candles, box_list, i, def_checker, damage_limit)
+    boxcalc = _os.environ.get('RESTGO_BOXCALC') or _os.path.join(_PROJECT_ROOT, 'boxcalc')
+    if not _os.path.isfile(boxcalc):
+        raise FileNotFoundError(
+            f'boxcalc 바이너리가 없습니다: {boxcalc}\n'
+            f'빌드: cd {_PROJECT_ROOT} && CGO_ENABLED=0 go build -o boxcalc ./cmd/boxcalc')
 
-        # 곡률 분석
-        candles[i]['curvekey'] = analyze_curvature(candles, box_list, i, exposition)
-
-        # Exposition 업데이트 (CurveKey 변경 시)
-        if candles[i-1]['curvekey'] != candles[i]['curvekey'] and box_list:
-            exposition = calc_exposition(box_list[-1])
-
-    return box_list
-
+    payload = {
+        'candles': [
+            {
+                'date': str(c['date']),
+                'open': float(c['open']),
+                'high': float(c['high']),
+                'low': float(c['low']),
+                'close': float(c['close']),
+                'volume': float(c['volume']),
+            }
+            for c in candles
+        ]
+    }
+    proc = subprocess.run(
+        [boxcalc], input=json.dumps(payload).encode(),
+        capture_output=True, timeout=60)
+    if proc.returncode != 0:
+        raise RuntimeError(f'boxcalc 실패: {proc.stderr.decode(errors="replace")}')
+    return json.loads(proc.stdout)['boxes']
 
 # ─────────────────────────────────────────────
 # 4. 차트 그리기

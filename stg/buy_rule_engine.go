@@ -58,6 +58,12 @@ func LoadRulesWithSettings(path string) ([]RuleConfig, Settings, error) {
 	if err != nil {
 		return nil, Settings{}, err
 	}
+	return ParseRulesWithSettings(data)
+}
+
+// ParseRulesWithSettings 는 YAML 바이트에서 전략 목록과 Settings 오버라이드를 파싱한다.
+// 임베드된 YAML(rules.Strategy1YAML 등)을 쓰는 독립 바이너리(boxcalc)용.
+func ParseRulesWithSettings(data []byte) ([]RuleConfig, Settings, error) {
 	var cfg strategiesFile
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, Settings{}, err

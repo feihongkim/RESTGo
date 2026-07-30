@@ -32,6 +32,12 @@ go build
 # 전 종목 배치 분석 → zpicture/batch_signals.json 저장 (고루틴 20개 병렬)
 ./RESTGo stock batch [일수=250]
 
+# boxcalc — Box 로직 외부 소비자용 독립 바이너리 (stdin 캔들 JSON → stdout boxes/buy_signals JSON)
+# 인프라 무의존(DB·MQ·config 불필요), strategy1.yaml 임베드(rules/embed.go). 소비자: py box_chart, makesql_chart 컨테이너
+./deploy/build_boxcalc.sh                                  # 정적 빌드 + MakeSQL/chart/bin 배포 (box/·stg/ 변경 시 재실행)
+./RESTGo stock candlesjson <종목코드> [일수] --out c.json   # boxcalc 입력 생성 (정합 검증·패리티 테스트용)
+./boxcalc < c.json                                         # stock analyze와 Box·신호 동일성 검증됨 (2026-07-30, 10종목)
+
 # 매수/매도 전략 YAML 교체 (기본: rules/strategy1.yaml / rules/sell_default.yaml)
 RESTGO_BUY_RULES=rules/buy_indicator.yaml RESTGO_SELL_RULES=rules/sell_positive_only_mh25.yaml ./RESTGo stock analyze 005930 250
 
@@ -216,7 +222,7 @@ C# 참조 프로젝트: `ssh feihong@192.168.3.120:/home/feihong/code/REST/RESTG
 
 | 디렉토리 | 역할 |
 |----------|------|
-| `py/analysis/` | Box 차트 생성 (`box_chart.py`는 `zpicture/batch_signals.json` 소비), MA5 변곡 분석, W패턴/WDefBox 연구 스크립트 다수 (`wd_*_study.py`, `wbottom_chart.py` 등) |
+| `py/analysis/` | Box 차트 생성 (`box_chart.py` — Box 계산은 `boxcalc` 바이너리 위임, 그리기만 Python), MA5 변곡 분석, W패턴/WDefBox 연구 스크립트 다수 (`wd_*_study.py`, `wbottom_chart.py` 등). Go 산출 `zpicture/batch_signals.json` 소비자는 `py/batch/chart_batch.py` |
 | `py/batch/` | 차트 일괄 생성, Telegram 발송 |
 | `py/strategy/theme/` | Box 분석과 독립적인 외국인 수급 기반 테마 전략 4종 (momentum/rotation/surge/sector_surge) |
 | `py/backtest/` | 테마 전략 공통 백테스트 엔진 |

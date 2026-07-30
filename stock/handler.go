@@ -52,6 +52,8 @@ func Handle(args []string) {
 	switch args[0] {
 	case "analyze": // 단일 종목 Box/매수/매도 분석 → 신호·포지션 콘솔 출력
 		handleAnalyze(args[1:])
+	case "candlesjson": // 캔들을 boxcalc 입력 JSON으로 출력 (boxcalc 정합 검증·차트 패리티용)
+		handleCandlesJSON(args[1:])
 	case "batch": // 전 종목 배치 분석 → zpicture/batch_signals.json 저장
 		handleBatch(args[1:])
 	case "gridtest": // 전략 파라미터 그리드 서치 백테스트
@@ -517,4 +519,80 @@ func handleBatch(args []string) {
 	}
 
 	fmt.Printf("[%s] 저장 완료: %s\n", console.GenerateTimestampedString(), outPath)
+}
+
+// handleCandlesJSON 은 캔들을 boxcalc 입력 JSON으로 출력한다.
+// 용도: boxcalc ↔ stock analyze 정합 검증, makesql_chart 등 외부 소비자 패리티 테스트.
+// console.Init() 로그가 stdout에 섞이므로 파이프 대신 --out 파일 경유를 권장:
+//
+//	./RESTGo stock candlesjson 005930 250 --out /tmp/c.json && ./boxcalc < /tmp/c.json
+func handleCandlesJSON(args []string) {
+	if len(args) < 1 {
+		fmt.Println("사용법: ./RESTGo stock candlesjson <종목코드> [일수=250] [--out 경로]")
+		return
+	}
+	shcode := args[0]
+	days := 250
+	outPath := ""
+	rest := args[1:]
+	for i := 0; i < len(rest); i++ {
+		switch {
+		case rest[i] == "--out" && i+1 < len(rest):
+			outPath = rest[i+1]
+			i++
+		default:
+			n, err := strconv.Atoi(rest[i])
+			if err != nil || n <= 0 {
+				fmt.Fprintf(os.Stderr, "오류: 잘못된 인수: %s\n", rest[i])
+				os.Exit(1)
+			}
+			days = n
+		}
+	}
+
+	// 국내 일봉 소스: hannam (analyze와 동일 — 정합 검증이 목적이므로 반드시 같은 로더 사용)
+	db, err := console.MsConn.GetDB("han")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "오류: han DB 연결 실패: %v\n", err)
+		os.Exit(1)
+	}
+	candles, err := box.FetchCandlesHannam(db, shcode, days)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "오류: %v\n", err)
+		os.Exit(1)
+	}
+
+	type candleJSON struct {
+		Date   string  `json:"date"`
+		Open   float64 `json:"open"`
+		High   float64 `json:"high"`
+		Low    float64 `json:"low"`
+		Close  float64 `json:"close"`
+		Volume float64 `json:"volume"`
+	}
+	out := struct {
+		Shcode  string       `json:"shcode"`
+		Candles []candleJSON `json:"candles"`
+	}{Shcode: shcode, Candles: make([]candleJSON, 0, len(candles))}
+	for _, c := range candles {
+		out.Candles = append(out.Candles, candleJSON{
+			Date: c.Date, Open: c.OpenOrigin, High: c.HighOrigin,
+			Low: c.LowOrigin, Close: c.CloseOrigin, Volume: c.Volume,
+		})
+	}
+
+	data, err := json.Marshal(out)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "오류: JSON 직렬화 실패: %v\n", err)
+		os.Exit(1)
+	}
+	if outPath != "" {
+		if err := os.WriteFile(outPath, data, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "오류: 파일 저장 실패: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("[%s] 저장 완료: %s (%d 캔들)\n", console.GenerateTimestampedString(), outPath, len(candles))
+	} else {
+		fmt.Println(string(data))
+	}
 }
