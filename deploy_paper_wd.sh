@@ -2,7 +2,7 @@
 # deploy_paper_wd.sh — B슬리브 WD Paper 트레이딩 배포 스크립트
 # host(white, 192.168.3.120)에서 실행
 set -uo pipefail
-HOST_DIR="/home/feihong/code/REST/RESTGo"
+HOST_DIR="/home/feihong/code/RESTGo"
 
 echo "=== B슬리브 WD Paper 배포 ==="
 echo "대상: ${HOST_DIR}"

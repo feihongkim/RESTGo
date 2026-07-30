@@ -2,6 +2,7 @@ package main
 
 import (
 	"RESTGo/console"
+	"RESTGo/scheduler"
 	"RESTGo/stock"
 	"fmt"
 	"os"
@@ -24,6 +25,8 @@ func main() {
 		stock.Handle(os.Args[2:])
 	case "py":
 		handlePython(os.Args[2:])
+	case "scheduler": // 정기 배치 상주 스케줄러 (crontab 대체)
+		scheduler.Handle(os.Args[2:])
 	default:
 		fmt.Printf("알 수 없는 명령: %s\n", os.Args[1])
 		printUsage()
@@ -38,6 +41,7 @@ func printUsage() {
 	fmt.Println("  ./RESTGo py box_chart <종목코드>")
 	fmt.Println("  ./RESTGo py box_batch")
 	fmt.Println("  ./RESTGo py <스크립트경로> [인수...]")
+	fmt.Println("  ./RESTGo scheduler [status|stop|list]")
 }
 
 // ─────────────────────────────────────────────

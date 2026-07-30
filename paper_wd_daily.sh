@@ -8,7 +8,7 @@
 #   ④ 원장(ledger.json) 갱신
 #
 # cron 예 (host, hannam+KIS2 일봉 적재 완료 시각에 맞춰):
-#   45 16 * * 1-5  cd /home/feihong/code/REST/RESTGo && ./paper_wd_daily.sh >> zpicture/paper_wd/daily.log 2>&1
+#   45 16 * * 1-5  cd /home/feihong/code/RESTGo && ./paper_wd_daily.sh >> zpicture/paper_wd/daily.log 2>&1
 #
 # 월간 리포트:
 #   ./RESTGo stock paper_wd_report [--month YYYYMM]

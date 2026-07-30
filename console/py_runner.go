@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 )
 
-const PythonBin = "/home/feihong/code/REST/RESTGo/venv/bin/python3"
-const ProjectRoot = "/home/feihong/code/REST/RESTGo"
+const PythonBin = "/home/feihong/code/RESTGo/venv/bin/python3"
+const ProjectRoot = "/home/feihong/code/RESTGo"
 
 // RunPythonScript 는 프로젝트 venv의 Python으로 스크립트를 실행합니다.
 // scriptPath: 프로젝트 루트 기준 상대 경로 또는 절대 경로

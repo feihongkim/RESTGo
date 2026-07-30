@@ -58,14 +58,20 @@ RESTGO_BUY_RULES=rules/buy_indicator.yaml RESTGO_SELL_RULES=rules/sell_positive_
 ./RESTGo stock mtop_scan|hns_scan|pullback_scan [--max N] [--candles N] [--out path]  # 패턴 신호 스캔 + 전방수익률 엣지 측정 (3종 모두 기각된 실험 — zpicture/*_report.md 참조, 러너는 재사용용 보존)
 ./RESTGo stock trigger_scan --trigger <이름> [--when C1,C2] [--when-not ...] [--cooldown N] [--set K=V]  # 범용 트리거×조건 조합 측정 (일반·armed 트리거, engine-parity 검증됨 — 새 조합 실험의 기본 도구)
 
-# Python 분석 스크립트 실행 (host: /home/feihong/code/REST/RESTGo/venv)
+# Python 분석 스크립트 실행 (host: /home/feihong/code/RESTGo/venv)
 ./RESTGo py box_chart <종목코드>
 ./RESTGo py box_batch
 ./RESTGo py batch_chart
 ./RESTGo py tg_send
 ./RESTGo py <스크립트경로> [인수...]   # 임의 스크립트 직접 실행
 
-# 테스트 (DB 불필요 — cond/indicator/stg는 순수 함수. box/study/stock은 테스트 없음)
+# 정기 배치 스케줄러 (crontab 대체 — @reboot로만 기동, 스케줄은 scheduler/tasks.go)
+./RESTGo scheduler          # 상주 실행 (nohup 권장)
+./RESTGo scheduler list     # 등록 스케줄 + 거래일 여부 + 스크립트 검증
+./RESTGo scheduler status   # 실행 여부 (PID: zpicture/scheduler.pid)
+./RESTGo scheduler stop     # SIGTERM 종료
+
+# 테스트 (DB 불필요 — cond/indicator/stg/scheduler는 순수 함수. box/study는 테스트 없음)
 go test ./...
 
 # 의존성 정리
@@ -230,13 +236,28 @@ C# 참조 프로젝트: `ssh feihong@192.168.3.120:/home/feihong/code/REST/RESTG
 
 ### Python 실행 환경
 
-- Python: `/home/feihong/code/REST/RESTGo/venv/bin/python3` (host 서버, RESTGo 전용 venv)
-- 스크립트 루트: `/home/feihong/code/REST/RESTGo` (host 서버)
+- Python: `/home/feihong/code/RESTGo/venv/bin/python3` (host 서버, RESTGo 전용 venv)
+- 스크립트 루트: `/home/feihong/code/RESTGo` (host 서버)
 - `console/py_runner.go`의 `PythonBin`, `ProjectRoot` 상수로 관리
+
+### 정기 배치 (`scheduler/` — 2026-07-31 신설)
+
+crontab 대신 상주 스케줄러가 배치를 돌립니다. 기존 cron 항목이 존재하지 않는 경로를 가리켜 `&&` 단락으로 2주간(20260717~) 조용히 실패한 사고가 계기입니다 — cron은 실패를 알려주지 않습니다.
+
+| 라벨 | 시각 | 스크립트 | 조건 |
+|------|------|----------|------|
+| `daily_batch` | 16:30 | `daily_batch.sh` | 거래일(월~금 − KRX 휴장일) |
+| `paper_wd` | 16:45 | `paper_wd_daily.sh` | 거래일 |
+
+- 스케줄 정의: `scheduler/tasks.go`의 `BuildSchedule()`. 엔진은 `scheduler/scheduler.go` (KIS2 `cmd/scheduler` 컨벤션)
+- **기동 즉시 검증**: 스크립트 존재·실행권한·라벨 중복·시각 형식·선행작업 유효성 (`validateSchedule`). 실패 시 기동 거부
+- **실패 알림**: 배치가 0이 아닌 코드로 끝나거나 패닉하면 `console.Tele()`로 Telegram 통보
+- **휴장일**: LS 프로젝트의 `/home/feihong/code/LS/ls-scheduler/holidays_krx.json`을 읽습니다 (복사본 두면 한쪽만 갱신돼 어긋남). `RESTGO_KRX_HOLIDAYS`로 교체 가능. 파일이 없거나 연도가 어긋나면 경고 후 요일 판정만 수행 — 스케줄러 자체는 계속 뜹니다
+- cron에는 `@reboot` 한 줄만 등록 (`nohup ./RESTGo scheduler >> zpicture/scheduler.log 2>&1 &`)
 
 ## 원격 서버 접속 정보
 
-- `ssh feihong@192.168.3.120` → 이 컨테이너의 호스트 서버 (hostname: `white`)에 접속됩니다.
+- `ssh feihong@192.168.3.120` → 호스트 서버 `white`. **이 작업 환경과 같은 머신입니다** (hostname 동일). 프로젝트 경로는 `/home/feihong/code/RESTGo` 하나뿐이며, `/home/feihong/code/REST/RESTGo`는 존재하지 않습니다 (2026-07-31 확인 — 과거 문서·cron·코드 상수가 이 없는 경로를 가리켜 장애 유발).
 - SSH 키: `~/.ssh/id_ed25519` (ED25519, 공개키 등록 완료)
 - C# 참조 프로젝트: `/home/feihong/code/REST/RESTG/Stock1/` (branch: `feature/multi-position-sell-strategy`)
 
