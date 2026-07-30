@@ -435,6 +435,10 @@ func handleBatch(args []string) {
 	sem := make(chan struct{}, 20)
 	var wg sync.WaitGroup
 	var processed int32
+	// dataDate: 분석에 실제로 쓰인 마지막 봉 날짜 (전 종목 최대).
+	// 달력 오늘과 다를 수 있다 — 일봉 적재가 지연되면 뒤처진다. 소비자(daily_batch)는
+	// "오늘 신호"를 달력이 아니라 이 값 기준으로 판정해야 신호를 잃지 않는다.
+	var dataDate string
 
 	batchSettings := stg.GetActiveSettings()
 
@@ -452,6 +456,14 @@ func handleBatch(args []string) {
 			}
 			indicator.PrepareCandles(candles)
 			result := stg.Analyze(candles, batchSettings)
+
+			if last := candles[len(candles)-1].Date; last != "" {
+				mu.Lock()
+				if last > dataDate {
+					dataDate = last
+				}
+				mu.Unlock()
+			}
 
 			n := atomic.AddInt32(&processed, 1)
 			if n%100 == 0 {
@@ -498,6 +510,7 @@ func handleBatch(args []string) {
 
 	output := map[string]interface{}{
 		"generated_at": generatedAt,
+		"data_date":    dataDate, // 분석에 쓰인 마지막 봉 날짜 (달력 오늘이 아님)
 		"display_days": 180,
 		"stocks":       jsonItems,
 	}

@@ -8,11 +8,28 @@
 #      (진입은 밀도 게이트 PASS 시에만 유효)
 #
 # 흐름: ① A배치 ② B배치 ③ 신호 수 적재(StrategySignalDaily: W_DefBoxGravity + S1_S03S23)
-#       ④ 이벤트 건별 적재(StrategyTradeLog: 오늘 매수/매도, 멱등) ⑤ 밀도 게이트 판정
+#       ④ 이벤트 건별 적재(StrategyTradeLog: 창 전체 매수/매도, 멱등 MERGE) ⑤ 밀도 게이트 판정
 #       ⑥ 요약(zpicture/daily_summary_YYYYMMDD.txt — 매수/매도/게이트)
 #
+# 기준일 규약 (2026-07-30 개정):
+#   DATA_DATE = 분석 창의 마지막 봉 날짜 (batch JSON의 data_date). 달력 오늘이 아니다.
+#   일봉 적재가 지연되면 달력 오늘 신호는 구조적으로 0건이 되므로, "오늘 신호"는
+#   반드시 DATA_DATE 기준으로 판정한다. (구버전은 달력 today로 걸러 신호를 통째로 버렸다)
+#
+# 적재 규약 (2026-07-30 개정 — 창 전체 기록):
+#   StrategyTradeLog — 분석 창(250일) 안의 모든 매수/매도를 기록한다. 신호는 실행 간
+#     불변이 실측 검증됨(35종목×3절단=105건 비교, 불일치 0)이라 재실행해도 값이 흔들리지 않는다.
+#     source: EOD  = trade_date == DATA_DATE (그 배치가 확정한 당일분, 기존 규약 유지)
+#             HIST = trade_date <  DATA_DATE (회고 재계산분)
+#             LIVE = listen 모드 실시간분 — 이 스크립트는 절대 건드리지 않는다
+#     as_of_date = 최초 관측일. MERGE 시 MIN(기존, 신규)로 유지되므로
+#       "언제 처음 이 신호를 볼 수 있었나"가 보존된다 (as_of_date - trade_date = 적재 지연).
+#   StrategySignalDaily — 밀도 게이트(stg/overlay_density.go)의 입력이다. 과거 날짜를
+#     소급 덮어쓰면 분위수 임계값이 움직여 과거 게이트 판정이 바뀌므로, 회고분은
+#     비어 있는 날짜만 채운다(WHEN NOT MATCHED). DATA_DATE 행만 확정 교체한다.
+#
 # 주의: 매도 알림은 "분석 창(250일) 신호대로 매수했다면"의 시뮬레이션 포지션 기준 —
-#       실계좌 보유와 다를 수 있음 (부분 진입·게이트 스킵 등). 실보유 대사는 StrategyTradeLog로.
+#       실계좌 보유와 다를 수 있음 (부분 진입·게이트 스킵 등). 실보유 대사는 source='LIVE' 행으로.
 #
 # 캔들 소스: hannam (2026-07-09 전환 — KIS2 일봉 적재 지연). 종목명만 KIS2 KospiCode 보조.
 # cron 예 (host, hannam 일봉 적재 완료 시각에 맞춰 조정):
@@ -34,52 +51,119 @@ RESTGO_BUY_RULES=rules/strategy1_s03s23.yaml RESTGO_SELL_RULES=rules/sell_s03s23
 RESTGO_BUY_RULES=rules/buy_wdefbox.yaml RESTGO_SELL_RULES=rules/sell_wdefbox.yaml \
   ./RESTGo stock batch "$DAYS" zpicture/daily_wdefbox.json || { echo "[오류] wdefbox 배치 실패"; exit 1; }
 
-# ③④ 신호 수·이벤트 적재 SQL 생성 (오늘 이벤트 추출)
+# ③④ 신호 수·이벤트 적재 SQL 생성 (창 전체 — 위 "적재 규약" 참조)
 python3 - "$TODAY" <<'PY'
 import json, sys
-today = sys.argv[1]
+run_date = sys.argv[1]          # 배치 실행일 (as_of_date)
 def esc(x): return str(x).replace("'", "''")
 strat = {'daily_s03s23': 'S1_S03S23', 'daily_wdefbox': 'W_DefBoxGravity'}
-counts, rows = {}, []
+
+data_date = ''
+counts = {}                     # (strategy, trade_date) -> 매수 신호 수
+events = {}                     # 멱등 키 -> 행 튜플 (MERGE는 중복 소스행에서 실패하므로 선-중복제거)
 for f, name in strat.items():
     d = json.load(open('zpicture/%s.json' % f))
-    n = 0
+    dd = d.get('data_date') or ''
+    if dd > data_date:
+        data_date = dd
     for s in d['stocks']:
         for g in s['signals']:
-            if g['date'] == today:
-                n += 1
-                rows.append("('%s','%s',N'%s','BUY','%s',N'%s',1.0,NULL,NULL)" % (
-                    name, esc(s['shcode']), esc(s['hname']), today, esc(g['reason'])))
+            counts[(name, g['date'])] = counts.get((name, g['date']), 0) + 1
+            events[(name, s['shcode'], g['date'], 'BUY', esc(g['reason']), '')] = (
+                name, s['shcode'], s['hname'], 'BUY', g['date'], g['reason'], 1.0, None, None)
         for e in s.get('sells') or []:
-            if e['sell_date'] == today:
-                rows.append("('%s','%s',N'%s','SELL','%s',N'%s',%.4f,%.4f,'%s')" % (
-                    name, esc(s['shcode']), esc(s['hname']), today, esc(e['reason']),
-                    e['weight'], e['net_return_pct'], esc(e['buy_date'])))
-    counts[name] = n
+            events[(name, s['shcode'], e['sell_date'], 'SELL', esc(e['reason']), e['buy_date'])] = (
+                name, s['shcode'], s['hname'], 'SELL', e['sell_date'], e['reason'],
+                e['weight'], e['net_return_pct'], e['buy_date'])
+
+if not data_date:
+    print('[오류] batch JSON에 data_date가 없습니다 — RESTGo 재빌드 필요', file=sys.stderr)
+    sys.exit(1)
+
+def lit(v, quote=True, n=False):
+    if v is None: return 'NULL'
+    if isinstance(v, float): return '%.4f' % v
+    return ("N'%s'" if n else "'%s'") % esc(v)
+
 sql = []
-for name, n in counts.items():
-    sql.append("DELETE FROM StrategySignalDaily WHERE strategy='%s' AND trade_date='%s'" % (name, today))
-    if n > 0:
-        sql.append("INSERT INTO StrategySignalDaily (strategy, trade_date, signal_count) VALUES ('%s','%s',%d)" % (name, today, n))
-# EOD(확정 재계산)만 교체 — LIVE(실시간 실체결 근거)는 절대 건드리지 않음 (2026-07-09 규약)
-sql.append("DELETE FROM StrategyTradeLog WHERE trade_date='%s' AND source='EOD'" % today)
-if rows:
-    sql.append("INSERT INTO StrategyTradeLog (strategy, shcode, hname, event_type, trade_date, reason, weight, net_return_pct, buy_date, source) VALUES " + ",".join(r[:-1] + ",'EOD')" for r in rows))
+
+# ③ StrategySignalDaily — DATA_DATE 행만 확정 교체, 과거는 빈 날짜만 채움(게이트 입력 보호)
+for name in strat.values():
+    sql.append("DELETE FROM StrategySignalDaily WHERE strategy='%s' AND trade_date='%s'" % (name, data_date))
+    n_today = counts.get((name, data_date), 0)
+    if n_today > 0:
+        sql.append("INSERT INTO StrategySignalDaily (strategy, trade_date, signal_count) VALUES ('%s','%s',%d)"
+                   % (name, data_date, n_today))
+hist_counts = [(k[0], k[1], v) for k, v in sorted(counts.items()) if k[1] < data_date]
+for i in range(0, len(hist_counts), 500):
+    vals = ",".join("('%s','%s',%d)" % c for c in hist_counts[i:i+500])
+    sql.append(
+        "MERGE StrategySignalDaily AS t USING (VALUES %s) AS s(strategy, trade_date, signal_count) "
+        "ON t.strategy = s.strategy AND t.trade_date = s.trade_date "
+        "WHEN NOT MATCHED THEN INSERT (strategy, trade_date, signal_count) "
+        "VALUES (s.strategy, s.trade_date, s.signal_count);" % vals)
+
+# ④ StrategyTradeLog — 창 전체 멱등 MERGE. LIVE 행은 source가 달라 매칭되지 않으므로 안전.
+rows = sorted(events.values(), key=lambda r: (r[0], r[4], r[1]))
+for i in range(0, len(rows), 400):
+    vals = ",".join(
+        "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)" % (
+            lit(r[0]), lit(r[1]), lit(r[2], n=True), lit(r[3]), lit(r[4]), lit(r[5], n=True),
+            lit(r[6]), lit(r[7]), lit(r[8]),
+            lit('EOD' if r[4] == data_date else 'HIST'), lit(run_date))
+        for r in rows[i:i+400])
+    sql.append(
+        "MERGE StrategyTradeLog AS t USING (VALUES %s) AS s(strategy, shcode, hname, event_type, "
+        "trade_date, reason, weight, net_return_pct, buy_date, source, as_of_date) "
+        "ON t.strategy = s.strategy AND t.shcode = s.shcode AND t.trade_date = s.trade_date "
+        "AND t.event_type = s.event_type AND t.source = s.source AND t.reason = s.reason "
+        "AND ISNULL(t.buy_date,'') = ISNULL(s.buy_date,'') "
+        # as_of_date는 최초 관측일을 유지한다 (재실행이 첫 관측 시점을 밀어내지 않도록)
+        "WHEN MATCHED THEN UPDATE SET hname = s.hname, weight = s.weight, "
+        "net_return_pct = s.net_return_pct, "
+        "as_of_date = CASE WHEN t.as_of_date IS NULL OR s.as_of_date < t.as_of_date "
+        "THEN s.as_of_date ELSE t.as_of_date END "
+        "WHEN NOT MATCHED THEN INSERT (strategy, shcode, hname, event_type, trade_date, reason, "
+        "weight, net_return_pct, buy_date, source, as_of_date) VALUES (s.strategy, s.shcode, s.hname, "
+        "s.event_type, s.trade_date, s.reason, s.weight, s.net_return_pct, s.buy_date, s.source, "
+        "s.as_of_date);" % vals)
+
 open('/tmp/daily_batch_load.sql', 'w').write('\n'.join(sql) + '\n')  # 개행 필수 — while read는 개행 없는 마지막 줄을 버림
-print('[적재 준비] 오늘 매수 신호: %s, 이벤트 행: %d' % (counts, len(rows)))
+open('/tmp/daily_batch_data_date', 'w').write(data_date + '\n')
+n_eod = sum(1 for r in rows if r[4] == data_date)
+lag = (int(run_date) - int(data_date))
+print('[적재 준비] 기준일(DATA_DATE) %s (실행일 %s)  창 전체 이벤트 %d행 (당일분 EOD %d행)'
+      % (data_date, run_date, len(rows), n_eod))
+if data_date != run_date:
+    print('[경고] 일봉 적재 지연 — 분석 기준일이 실행일보다 과거입니다 (%s < %s). '
+          '당일 신호는 %s 기준으로 판정됩니다.' % (data_date, run_date, data_date))
 PY
+[ ${PIPESTATUS[0]:-0} -eq 0 ] || { echo "[오류] 적재 SQL 생성 실패"; exit 1; }
+DATA_DATE=$(cat /tmp/daily_batch_data_date)
+
+LOAD_FAIL=0
 while IFS= read -r Q; do
-  [ -n "$Q" ] && ./RESTGo sqlquery -db han "$Q" >/dev/null
+  [ -n "$Q" ] || continue
+  if ! ./RESTGo sqlquery -db han "$Q" >/dev/null; then
+    LOAD_FAIL=$((LOAD_FAIL + 1))
+    echo "[오류] 적재 SQL 실패: ${Q:0:120}..."
+  fi
 done < /tmp/daily_batch_load.sql
-echo "[적재] StrategySignalDaily + StrategyTradeLog 완료"
+if [ "$LOAD_FAIL" -gt 0 ]; then
+  echo "[적재] ★ 실패 ${LOAD_FAIL}건 — StrategySignalDaily/StrategyTradeLog 부분 적재 상태"
+else
+  echo "[적재] StrategySignalDaily + StrategyTradeLog 완료 (기준일 ${DATA_DATE})"
+fi
 
-# ⑤ 밀도 게이트 판정
-GATE=$(./RESTGo stock densitygate "$TODAY" 2>&1 | grep '\[densitygate\]' || true)
+# ⑤ 밀도 게이트 판정 — 기준일은 DATA_DATE.
+# 달력 오늘로 판정하면 적재 지연 구간이 "신호 0일"로 계산돼 밀도가 인위적으로 낮아진다.
+GATE=$(./RESTGo stock densitygate "$DATA_DATE" 2>&1 | grep '\[densitygate\]' || true)
 
-# ⑥ 요약 (매수 + 매도 + 게이트)
-python3 - "$TODAY" "$SUM" <<'PY'
+# ⑥ 요약 (매수 + 매도 + 게이트) — DATA_DATE 기준 당일분
+python3 - "$DATA_DATE" "$SUM" "$TODAY" <<'PY'
 import json, sys
-today, out = sys.argv[1], sys.argv[2]
+today, out = sys.argv[1], sys.argv[2]   # today = DATA_DATE (분석 기준일)
+run_date = sys.argv[3]
 def load(path):
     d = json.load(open(path))
     buys = [(s['shcode'], s['hname'], g['reason']) for s in d['stocks'] for g in s['signals'] if g['date'] == today]
@@ -88,6 +172,9 @@ def load(path):
 a_b, a_s = load('zpicture/daily_s03s23.json')
 b_b, b_s = load('zpicture/daily_wdefbox.json')
 L = [f"===== 일일 신호 요약 {today} =====", ""]
+if today != run_date:
+    L.append(f"※ 일봉 적재 지연 — 분석 기준일 {today}, 배치 실행일 {run_date}")
+    L.append("")
 def sect(title, buys, sells, note=""):
     L.append(title)
     L.append(f"  매수 {len(buys)}건" + (":" if buys else ""))
