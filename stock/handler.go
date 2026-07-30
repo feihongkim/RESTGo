@@ -6,6 +6,7 @@ import (
 	"RESTGo/indicator"
 	"RESTGo/stg"
 	"RESTGo/study"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -248,15 +249,16 @@ func handleAnalyze(args []string) {
 
 	fmt.Printf("[%s] 종목: %s  일수: %d\n", console.GenerateTimestampedString(), shcode, days)
 
-	// 국내 일봉 소스: hannam (2026-07-09 사용자 지시 — KIS2 일봉 적재 지연으로 전환)
-	db, err := console.MsConn.GetDB("han")
+	// 국내 일봉 소스: 배치와 동일한 스위치를 쓴다 (분석과 배치가 다른 소스를 보면 대조 불가)
+	src := activeCandleSource()
+	db, err := console.MsConn.GetDB(src.DBLabel)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "오류: han DB 연결 실패: %v\n", err)
+		fmt.Fprintf(os.Stderr, "오류: %s DB 연결 실패: %v\n", src.DBLabel, err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("[%s] 캔들 조회 중...\n", console.GenerateTimestampedString())
-	candles, err := box.FetchCandlesHannam(db, shcode, days)
+	fmt.Printf("[%s] 캔들 조회 중... (소스: %s)\n", console.GenerateTimestampedString(), src.Name)
+	candles, err := src.fetchCandles(db, shcode, days)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "오류: %v\n", err)
 		os.Exit(1)
@@ -345,6 +347,48 @@ func handleAnalyze(args []string) {
 	}
 }
 
+// ── 국내 일봉 소스 스위치 (2026-07-31) ───────────────────────────────────────
+//
+// 운용 기본은 KIS2다. hannam은 매일 적재하지 않는 연구·백테스트용으로 남긴다
+// (16년 히스토리는 hannam에만 있으므로 walkforward 등 장기 연구는 계속 hannam).
+//
+// KIS2를 고른 근거 (2026-07-31 실측):
+//   - 신선도: 매일 적재 중 (hannam은 20260720, LS는 20260721에서 정지)
+//   - 수정주가: hannam과 동일 기준. 액면분할·병합 종목에서 LS만 어긋났다
+//     (000040 hannam/KIS2 1335 vs LS 267 등)
+//   - 유니버스: hannam의 순수 하위집합. 빠지는 387종목은 전부 ELW/파생
+//   - 깊이: 종목당 약 390봉(19개월). 250봉 창에는 충분하나 500봉을 쓰는
+//     paper_wd는 전환 대상이 아니다
+//
+// RESTGO_CANDLE_SOURCE=hannam 으로 되돌릴 수 있다 (A/B 대조·장애 대비).
+type candleSource struct {
+	Name    string // "kis2" | "hannam"
+	DBLabel string // console.MsConn 키
+}
+
+func activeCandleSource() candleSource {
+	if os.Getenv("RESTGO_CANDLE_SOURCE") == "hannam" {
+		return candleSource{Name: "hannam", DBLabel: "han"}
+	}
+	return candleSource{Name: "kis2", DBLabel: "KIS2"}
+}
+
+// fetchStockList 는 소스에 맞는 종목 목록을 반환한다.
+func (s candleSource) fetchStockList(db *sql.DB) ([]string, error) {
+	if s.Name == "hannam" {
+		return box.FetchHannamStockList(db)
+	}
+	return box.FetchKIS2StockList(db)
+}
+
+// fetchCandles 는 소스에 맞는 일봉을 반환한다.
+func (s candleSource) fetchCandles(db *sql.DB, shcode string, days int) ([]*box.Candle, error) {
+	if s.Name == "hannam" {
+		return box.FetchCandlesHannam(db, shcode, days)
+	}
+	return box.FetchCandles(db, shcode, days)
+}
+
 // fetchStockNames 는 KIS2 KospiCode에서 종목명 맵을 만든다 (이름 전용 — 시세는 hannam 사용).
 // KIS2 접속 실패 시 빈 맵 반환 (이름 없이 진행).
 func fetchStockNames() map[string]string {
@@ -387,14 +431,16 @@ func handleBatch(args []string) {
 		fmt.Printf("[warn] 매도 룰 로드 실패 — 매도 평가 비활성: %v\n", err)
 	}
 
-	// 국내 일봉 소스: hannam (2026-07-09 사용자 지시). 종목명은 KIS2 KospiCode에서 보조 조회
-	db, err := console.MsConn.GetDB("han")
+	// 국내 일봉 소스: 기본 KIS2 (2026-07-31 전환). 종목명은 KIS2 KospiCode에서 보조 조회
+	src := activeCandleSource()
+	db, err := console.MsConn.GetDB(src.DBLabel)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "오류: han DB 연결 실패: %v\n", err)
+		fmt.Fprintf(os.Stderr, "오류: %s DB 연결 실패: %v\n", src.DBLabel, err)
 		os.Exit(1)
 	}
+	fmt.Printf("[%s] 일봉 소스: %s (%s)\n", console.GenerateTimestampedString(), src.Name, src.DBLabel)
 
-	codes, err := box.FetchHannamStockList(db)
+	codes, err := src.fetchStockList(db)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "오류: 종목 조회 실패: %v\n", err)
 		os.Exit(1)
@@ -470,7 +516,7 @@ func handleBatch(args []string) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			candles, err := box.FetchCandlesHannam(db, s.Shcode, days)
+			candles, err := src.fetchCandles(db, s.Shcode, days)
 			if err != nil || len(candles) < 6 {
 				atomic.AddInt32(&processed, 1)
 				return
@@ -558,7 +604,8 @@ func handleBatch(args []string) {
 		// data_date: 종목 커버리지가 임계 이상인 최신 봉 날짜 (달력 오늘도, 단순 최댓값도 아님)
 		"data_date":          dataDate,
 		"data_date_coverage": math.Round(dataCoverage*1000) / 1000,
-		"data_date_max":      maxDate, // 참고용 — 적재 진행 중이면 data_date보다 앞선다
+		"data_date_max":      maxDate,  // 참고용 — 적재 진행 중이면 data_date보다 앞선다
+		"candle_source":      src.Name, // 소비자(daily_batch)가 DB에 기록해 이력 단절 지점을 남긴다
 		"trading_dates":      calendar,
 		"display_days":       180,
 		"stocks":             jsonItems,
@@ -612,13 +659,14 @@ func handleCandlesJSON(args []string) {
 		}
 	}
 
-	// 국내 일봉 소스: hannam (analyze와 동일 — 정합 검증이 목적이므로 반드시 같은 로더 사용)
-	db, err := console.MsConn.GetDB("han")
+	// analyze와 동일 소스를 써야 한다 — 정합 검증이 목적이므로 로더가 갈리면 무의미하다
+	src := activeCandleSource()
+	db, err := console.MsConn.GetDB(src.DBLabel)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "오류: han DB 연결 실패: %v\n", err)
+		fmt.Fprintf(os.Stderr, "오류: %s DB 연결 실패: %v\n", src.DBLabel, err)
 		os.Exit(1)
 	}
-	candles, err := box.FetchCandlesHannam(db, shcode, days)
+	candles, err := src.fetchCandles(db, shcode, days)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "오류: %v\n", err)
 		os.Exit(1)

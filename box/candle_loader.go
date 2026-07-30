@@ -188,3 +188,38 @@ func FetchHannamStockList(db *sql.DB) ([]string, error) {
 	}
 	return out, nil
 }
+
+// FetchKIS2StockList 는 KIS2 DB DM.BP_PeriodPrice 에서 국내 종목 목록을 가져옵니다.
+// 최근 35일 범위로 좁혀 상장폐지 종목을 자동 배제합니다 (FetchHannamStockList와 동일 규약).
+//
+// hannam 대비 유니버스는 순수 하위집합입니다 — KIS2에만 있는 종목은 없고,
+// hannam에만 있는 387종목은 전부 5xxxxx~7xxxxx 대역의 ELW/파생입니다 (2026-07-31 실측).
+func FetchKIS2StockList(db *sql.DB) ([]string, error) {
+	to := time.Now().Format("20060102")
+	from := time.Now().AddDate(0, 0, -35).Format("20060102")
+	rows, err := db.Query(fmt.Sprintf(`
+		SELECT DISTINCT stck_shrn_iscd
+		FROM DM.BP_PeriodPrice
+		WHERE stck_bsop_date BETWEEN '%s' AND '%s' AND period_type = 'D'
+		ORDER BY stck_shrn_iscd
+	`, from, to))
+	if err != nil {
+		return nil, fmt.Errorf("KIS2 종목 목록 조회 실패: %w", err)
+	}
+	defer rows.Close()
+
+	var codes []string
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			return nil, fmt.Errorf("row 스캔 실패: %w", err)
+		}
+		if code != "" {
+			codes = append(codes, code)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row 반복 오류: %w", err)
+	}
+	return codes, nil
+}

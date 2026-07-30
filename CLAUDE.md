@@ -78,6 +78,8 @@ go test ./...
 go mod tidy
 ```
 
+**국내 일봉 소스** (2026-07-31 전환): 운용 기본은 **KIS2**(`DM.BP_PeriodPrice`). `RESTGO_CANDLE_SOURCE=hannam`으로 되돌릴 수 있으며 `analyze`/`batch`/`candlesjson`이 같은 스위치를 씁니다. hannam은 매일 적재하지 않는 **연구·백테스트 전용**(16년 히스토리는 hannam에만 있음 — walkforward 등 장기 연구는 계속 hannam). `paper_wd`는 500봉을 요구해 전환 대상이 아닙니다(KIS2는 약 390봉).
+
 지원 DB: `key` (기본), `han`, `var`, `KIS2`, `tuf`, `LS` (tuf·LS는 비필수 — 연결 실패 시 해당 기능만 비활성. LS는 KeyValueStore에 ADDR_LS/DBNAME_LS 등록 시에만 연결)
 
 ## 핵심 아키텍처

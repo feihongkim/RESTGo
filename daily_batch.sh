@@ -61,6 +61,7 @@ def esc(x): return str(x).replace("'", "''")
 strat = {'daily_s03s23': 'S1_S03S23', 'daily_wdefbox': 'W_DefBoxGravity'}
 
 data_date = ''
+candle_source = ''
 calendar = set()                # 거래일 달력 (batch JSON의 trading_dates 합집합)
 counts = {}                     # (strategy, trade_date) -> 매수 신호 수
 events = {}                     # 멱등 키 -> 행 튜플 (MERGE는 중복 소스행에서 실패하므로 선-중복제거)
@@ -70,6 +71,7 @@ for f, name in strat.items():
     if dd > data_date:
         data_date = dd
     calendar.update(d.get('trading_dates') or [])
+    candle_source = d.get('candle_source') or candle_source
     for s in d['stocks']:
         for g in s['signals']:
             counts[(name, g['date'])] = counts.get((name, g['date']), 0) + 1
@@ -107,32 +109,32 @@ sql = []
 # 가중)에도 기여하지 않으므로 기존 판정을 바꾸지 않는다.
 for name in strat.values():
     sql.append("DELETE FROM StrategySignalDaily WHERE strategy='%s' AND trade_date='%s'" % (name, data_date))
-    sql.append("INSERT INTO StrategySignalDaily (strategy, trade_date, signal_count, as_of_date) "
-               "VALUES ('%s','%s',%d,'%s')" % (name, data_date, counts.get((name, data_date), 0), run_date))
+    sql.append("INSERT INTO StrategySignalDaily (strategy, trade_date, signal_count, as_of_date, candle_source) "
+               "VALUES ('%s','%s',%d,'%s','%s')" % (name, data_date, counts.get((name, data_date), 0), run_date, candle_source))
 
 cal_days = sorted(d for d in calendar if d < data_date)
 hist_counts = [(name, day, counts.get((name, day), 0))
                for name in strat.values() for day in cal_days]
 for i in range(0, len(hist_counts), 400):
-    vals = ",".join("('%s','%s',%d,'%s')" % (c[0], c[1], c[2], run_date) for c in hist_counts[i:i+400])
+    vals = ",".join("('%s','%s',%d,'%s','%s')" % (c[0], c[1], c[2], run_date, candle_source) for c in hist_counts[i:i+400])
     sql.append(
-        "MERGE StrategySignalDaily AS t USING (VALUES %s) AS s(strategy, trade_date, signal_count, as_of_date) "
+        "MERGE StrategySignalDaily AS t USING (VALUES %s) AS s(strategy, trade_date, signal_count, as_of_date, candle_source) "
         "ON t.strategy = s.strategy AND t.trade_date = s.trade_date "
-        "WHEN NOT MATCHED THEN INSERT (strategy, trade_date, signal_count, as_of_date) "
-        "VALUES (s.strategy, s.trade_date, s.signal_count, s.as_of_date);" % vals)
+        "WHEN NOT MATCHED THEN INSERT (strategy, trade_date, signal_count, as_of_date, candle_source) "
+        "VALUES (s.strategy, s.trade_date, s.signal_count, s.as_of_date, s.candle_source);" % vals)
 
 # ④ StrategyTradeLog — 창 전체 멱등 MERGE. LIVE 행은 source가 달라 매칭되지 않으므로 안전.
 rows = sorted(events.values(), key=lambda r: (r[0], r[4], r[1]))
 for i in range(0, len(rows), 400):
     vals = ",".join(
-        "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)" % (
+        "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)" % (
             lit(r[0]), lit(r[1]), lit(r[2], n=True), lit(r[3]), lit(r[4]), lit(r[5], n=True),
             lit(r[6]), lit(r[7]), lit(r[8]),
-            lit('EOD' if r[4] == data_date else 'HIST'), lit(run_date))
+            lit('EOD' if r[4] == data_date else 'HIST'), lit(run_date), lit(candle_source))
         for r in rows[i:i+400])
     sql.append(
         "MERGE StrategyTradeLog AS t USING (VALUES %s) AS s(strategy, shcode, hname, event_type, "
-        "trade_date, reason, weight, net_return_pct, buy_date, source, as_of_date) "
+        "trade_date, reason, weight, net_return_pct, buy_date, source, as_of_date, candle_source) "
         "ON t.strategy = s.strategy AND t.shcode = s.shcode AND t.trade_date = s.trade_date "
         "AND t.event_type = s.event_type AND t.source = s.source AND t.reason = s.reason "
         "AND ISNULL(t.buy_date,'') = ISNULL(s.buy_date,'') "
@@ -142,16 +144,16 @@ for i in range(0, len(rows), 400):
         "as_of_date = CASE WHEN t.as_of_date IS NULL OR s.as_of_date < t.as_of_date "
         "THEN s.as_of_date ELSE t.as_of_date END "
         "WHEN NOT MATCHED THEN INSERT (strategy, shcode, hname, event_type, trade_date, reason, "
-        "weight, net_return_pct, buy_date, source, as_of_date) VALUES (s.strategy, s.shcode, s.hname, "
+        "weight, net_return_pct, buy_date, source, as_of_date, candle_source) VALUES (s.strategy, s.shcode, s.hname, "
         "s.event_type, s.trade_date, s.reason, s.weight, s.net_return_pct, s.buy_date, s.source, "
-        "s.as_of_date);" % vals)
+        "s.as_of_date, s.candle_source);" % vals)
 
 open('/tmp/daily_batch_load.sql', 'w').write('\n'.join(sql) + '\n')  # 개행 필수 — while read는 개행 없는 마지막 줄을 버림
 open('/tmp/daily_batch_data_date', 'w').write(data_date + '\n')
 n_eod = sum(1 for r in rows if r[4] == data_date)
 lag = (int(run_date) - int(data_date))
-print('[적재 준비] 기준일(DATA_DATE) %s (실행일 %s)  창 전체 이벤트 %d행 (당일분 EOD %d행)'
-      % (data_date, run_date, len(rows), n_eod))
+print('[적재 준비] 기준일(DATA_DATE) %s (실행일 %s)  소스 %s  창 전체 이벤트 %d행 (당일분 EOD %d행)'
+      % (data_date, run_date, candle_source or '?', len(rows), n_eod))
 if dropped:
     print('[적재 준비] 기준일 이후 이벤트 %d건 제외 (부분 적재 구간 — 데이터가 다 차면 다음 실행에 포함)'
           % len(dropped))
