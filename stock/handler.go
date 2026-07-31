@@ -49,6 +49,9 @@ func Handle(args []string) {
 		fmt.Println("  ./RESTGo stock batch [일수=250] [출력경로=zpicture/batch_signals.json]")
 		fmt.Println("  ./RESTGo stock gridtest <grid_yaml> [output_json]")
 		fmt.Println("  ./RESTGo stock edgetest [markets_csv] [output_json]")
+		fmt.Println("  ./RESTGo stock publish-hist [--as-of YYYYMMDD | --from ... --to ...] [--days 250]")
+		fmt.Println("  ./RESTGo stock publish-live [--date YYYYMMDD] [--allow-gap]")
+		fmt.Println("  ./RESTGo stock listen [--queue CMST_st2] [--peek N]")
 		return
 	}
 
@@ -125,6 +128,10 @@ func Handle(args []string) {
 		handleListen(args[1:])
 	case "feed": // 발신 모드 — KIS2 일봉을 발신측 스키마로 큐에 발행 (셀프 테스트·패리티 검증용)
 		handleFeed(args[1:])
+	case "publish-hist": // 역사적 발행기 — LS 일봉을 메모리에 올려 과거 창을 재생 발행 (mode=eod)
+		handlePublishHist(args[1:])
+	case "publish-live": // 실전 발행기 — LS 일봉 + 오늘 t8407 현재가 합성 가상 금일봉 (LIVE)
+		handlePublishLive(args[1:])
 	case "paper_wd": // B슬리브 WD Paper 트레이딩 — 4국(3시장) 일일 스캔 + 알림 + 원장
 		HandlePaperWD(args[1:])
 	case "paper_wd_report": // B슬리브 WD Paper 월간 리포트 (비용 차감 통계)
@@ -367,24 +374,37 @@ type candleSource struct {
 }
 
 func activeCandleSource() candleSource {
-	if os.Getenv("RESTGO_CANDLE_SOURCE") == "hannam" {
+	switch os.Getenv("RESTGO_CANDLE_SOURCE") {
+	case "hannam":
 		return candleSource{Name: "hannam", DBLabel: "han"}
+	case "ls":
+		// LS(ST.t8410)는 CMST_st2 발행기(publish-hist/publish-live)의 고정 소스다.
+		// analyze/batch에서도 같은 소스로 대조하고 싶을 때 이 값을 쓴다.
+		// 주의: LS 일봉은 stock-daily 배치 주기에 따라 뒤처질 수 있다 —
+		// 신선도가 중요한 운용 배치의 기본값으로 바꾸지 말 것.
+		return candleSource{Name: "ls", DBLabel: "LS"}
 	}
 	return candleSource{Name: "kis2", DBLabel: "KIS2"}
 }
 
 // fetchStockList 는 소스에 맞는 종목 목록을 반환한다.
 func (s candleSource) fetchStockList(db *sql.DB) ([]string, error) {
-	if s.Name == "hannam" {
+	switch s.Name {
+	case "hannam":
 		return box.FetchHannamStockList(db)
+	case "ls":
+		return box.FetchLSStockList(db)
 	}
 	return box.FetchKIS2StockList(db)
 }
 
 // fetchCandles 는 소스에 맞는 일봉을 반환한다.
 func (s candleSource) fetchCandles(db *sql.DB, shcode string, days int) ([]*box.Candle, error) {
-	if s.Name == "hannam" {
+	switch s.Name {
+	case "hannam":
 		return box.FetchCandlesHannam(db, shcode, days)
+	case "ls":
+		return box.FetchCandlesLS(db, shcode, days)
 	}
 	return box.FetchCandles(db, shcode, days)
 }
