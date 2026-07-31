@@ -95,8 +95,14 @@ for k in dropped:
 counts = {k: v for k, v in counts.items() if k[1] <= data_date}
 
 def lit(v, quote=True, n=False):
+    """SQL 리터럴. 숫자는 인용하지 않는다.
+    isinstance(v, float)만 보면 정수를 문자열로 인용해버린다 — Go가 weight 1.0을
+    JSON에 `1`로 직렬화하므로 Python이 int로 읽고, 같은 MERGE VALUES 안에서
+    0.5(numeric)와 '1'(varchar)이 섞여 SQL Server 형 변환 오류가 난다
+    (2026-07-31 실측: Arithmetic overflow converting varchar to numeric)."""
     if v is None: return 'NULL'
-    if isinstance(v, float): return '%.4f' % v
+    if isinstance(v, bool): return '1' if v else '0'
+    if isinstance(v, (int, float)): return '%.4f' % v
     return ("N'%s'" if n else "'%s'") % esc(v)
 
 sql = []
@@ -109,8 +115,8 @@ sql = []
 # 가중)에도 기여하지 않으므로 기존 판정을 바꾸지 않는다.
 for name in strat.values():
     sql.append("DELETE FROM StrategySignalDaily WHERE strategy='%s' AND trade_date='%s'" % (name, data_date))
-    sql.append("INSERT INTO StrategySignalDaily (strategy, trade_date, signal_count, as_of_date, candle_source) "
-               "VALUES ('%s','%s',%d,'%s','%s')" % (name, data_date, counts.get((name, data_date), 0), run_date, candle_source))
+    sql.append("INSERT INTO StrategySignalDaily (strategy, trade_date, signal_count, as_of_date, candle_source, DT_REG, DT_MDF) "
+               "VALUES ('%s','%s',%d,'%s','%s',GETDATE(),GETDATE())" % (name, data_date, counts.get((name, data_date), 0), run_date, candle_source))
 
 cal_days = sorted(d for d in calendar if d < data_date)
 hist_counts = [(name, day, counts.get((name, day), 0))
@@ -120,8 +126,8 @@ for i in range(0, len(hist_counts), 400):
     sql.append(
         "MERGE StrategySignalDaily AS t USING (VALUES %s) AS s(strategy, trade_date, signal_count, as_of_date, candle_source) "
         "ON t.strategy = s.strategy AND t.trade_date = s.trade_date "
-        "WHEN NOT MATCHED THEN INSERT (strategy, trade_date, signal_count, as_of_date, candle_source) "
-        "VALUES (s.strategy, s.trade_date, s.signal_count, s.as_of_date, s.candle_source);" % vals)
+        "WHEN NOT MATCHED THEN INSERT (strategy, trade_date, signal_count, as_of_date, candle_source, DT_REG, DT_MDF) "
+        "VALUES (s.strategy, s.trade_date, s.signal_count, s.as_of_date, s.candle_source, GETDATE(), GETDATE());" % vals)
 
 # ④ StrategyTradeLog — 창 전체 멱등 MERGE. LIVE 행은 source가 달라 매칭되지 않으므로 안전.
 rows = sorted(events.values(), key=lambda r: (r[0], r[4], r[1]))
@@ -142,11 +148,13 @@ for i in range(0, len(rows), 400):
         "WHEN MATCHED THEN UPDATE SET hname = s.hname, weight = s.weight, "
         "net_return_pct = s.net_return_pct, "
         "as_of_date = CASE WHEN t.as_of_date IS NULL OR s.as_of_date < t.as_of_date "
-        "THEN s.as_of_date ELSE t.as_of_date END "
+        "THEN s.as_of_date ELSE t.as_of_date END, "
+        # DT_REG는 최초 등록 시각이므로 UPDATE에서 건드리지 않는다
+        "DT_MDF = GETDATE() "
         "WHEN NOT MATCHED THEN INSERT (strategy, shcode, hname, event_type, trade_date, reason, "
-        "weight, net_return_pct, buy_date, source, as_of_date, candle_source) VALUES (s.strategy, s.shcode, s.hname, "
+        "weight, net_return_pct, buy_date, source, as_of_date, candle_source, DT_REG, DT_MDF) VALUES (s.strategy, s.shcode, s.hname, "
         "s.event_type, s.trade_date, s.reason, s.weight, s.net_return_pct, s.buy_date, s.source, "
-        "s.as_of_date, s.candle_source);" % vals)
+        "s.as_of_date, s.candle_source, GETDATE(), GETDATE());" % vals)
 
 open('/tmp/daily_batch_load.sql', 'w').write('\n'.join(sql) + '\n')  # 개행 필수 — while read는 개행 없는 마지막 줄을 버림
 open('/tmp/daily_batch_data_date', 'w').write(data_date + '\n')

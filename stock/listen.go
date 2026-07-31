@@ -410,6 +410,7 @@ func (h *dbHandle) upsertTradeLog(strategy, shcode, hname, eventType, tradeDate,
 		nr, bd = netReturn, buyDate
 	}
 	// as_of_date는 최초 관측일을 보존한다 (재실행이 첫 관측 시점을 밀어내지 않도록).
+	// DT_REG(최초 등록)는 INSERT에서만 찍고 UPDATE에서 건드리지 않는다. DT_MDF는 매 수정마다 갱신.
 	asOf := time.Now().Format("20060102")
 	_, err := h.db.Exec(`
 		MERGE StrategyTradeLog AS t
@@ -420,11 +421,13 @@ func (h *dbHandle) upsertTradeLog(strategy, shcode, hname, eventType, tradeDate,
 		   AND ISNULL(t.buy_date,'')=ISNULL(s.buy_date,'')
 		WHEN MATCHED THEN UPDATE SET hname=s.hname, weight=s.weight, net_return_pct=s.net_return_pct,
 			as_of_date = CASE WHEN t.as_of_date IS NULL OR s.as_of_date < t.as_of_date
-			                  THEN s.as_of_date ELSE t.as_of_date END
+			                  THEN s.as_of_date ELSE t.as_of_date END,
+			DT_MDF = GETDATE()
 		WHEN NOT MATCHED THEN INSERT (strategy, shcode, hname, event_type, trade_date, reason,
-			weight, net_return_pct, buy_date, source, as_of_date, candle_source)
+			weight, net_return_pct, buy_date, source, as_of_date, candle_source, DT_REG, DT_MDF)
 			VALUES (s.strategy, s.shcode, s.hname, s.event_type, s.trade_date, s.reason,
-			        s.weight, s.net_return_pct, s.buy_date, s.source, s.as_of_date, 'queue');`,
+			        s.weight, s.net_return_pct, s.buy_date, s.source, s.as_of_date, 'queue',
+			        GETDATE(), GETDATE());`,
 		strategy, shcode, hname, eventType, tradeDate, reason, weight, nr, bd, source, asOf)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[listen] TradeLog 적재 실패 (%s %s %s): %v\n", shcode, eventType, source, err)
