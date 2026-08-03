@@ -40,6 +40,88 @@ func TestLoadSellStrategy(t *testing.T) {
 	}
 }
 
+// TestLoadSellStrategyDefinitionDoesNotMutateGlobalRules 는 다중 전략용 로더가
+// 마지막으로 로드한 전략을 패키지 전역 룰에 덮어쓰지 않는지 확인한다.
+// 이 불변식이 깨지면 listen에서 S1을 먼저, W중력을 나중에 로드했을 때
+// 두 전략 모두 W중력 매도 룰로 평가된다.
+func TestLoadSellStrategyDefinitionDoesNotMutateGlobalRules(t *testing.T) {
+	savedRules := activeSellRules
+	defer func() { activeSellRules = savedRules }()
+
+	sentinel := []SellRuleConfig{{Name: "GlobalSentinel"}}
+	activeSellRules = sentinel
+
+	s03, err := LoadSellStrategyDefinition("../rules/sell_s03s23.yaml")
+	if err != nil {
+		t.Fatalf("S03/S23 매도 전략 로드 실패: %v", err)
+	}
+	w, err := LoadSellStrategyDefinition("../rules/sell_wdefbox.yaml")
+	if err != nil {
+		t.Fatalf("W중력 매도 전략 로드 실패: %v", err)
+	}
+
+	if len(s03.Rules) != 18 {
+		t.Fatalf("S03/S23 룰 수 = %d, want 18", len(s03.Rules))
+	}
+	if len(w.Rules) != 4 {
+		t.Fatalf("W중력 룰 수 = %d, want 4", len(w.Rules))
+	}
+	if len(activeSellRules) != 1 || activeSellRules[0].Name != "GlobalSentinel" {
+		t.Fatalf("명시적 전략 로드가 전역 룰을 변경함: %+v", activeSellRules)
+	}
+}
+
+// TestEvaluateSellSignalsWithRulesIsolated 는 전역 룰과 다른 두 룰 세트를
+// A → B → A 순서로 평가해 각 호출이 전달받은 룰만 사용하는지 확인한다.
+func TestEvaluateSellSignalsWithRulesIsolated(t *testing.T) {
+	const conditionName = "TestSellRuleIsolationAlwaysTrue"
+	savedCondition, hadCondition := sellConditionRegistry[conditionName]
+	savedRules := activeSellRules
+	defer func() {
+		if hadCondition {
+			sellConditionRegistry[conditionName] = savedCondition
+		} else {
+			delete(sellConditionRegistry, conditionName)
+		}
+		activeSellRules = savedRules
+	}()
+
+	sellConditionRegistry[conditionName] = func(ctx *box.TradingContext, pos *box.TradePosition, s SellSettings) bool {
+		return true
+	}
+	makeRule := func(name string) []SellRuleConfig {
+		return []SellRuleConfig{{
+			Name: name, Path: "critical", When: []string{conditionName},
+			Tracking: SellTracking{Immediate: true}, Weight: 1.0, Category: "Critical",
+		}}
+	}
+
+	rulesA := makeRule("StrategyAExit")
+	rulesB := makeRule("StrategyBExit")
+	activeSellRules = makeRule("GlobalPoisonExit")
+
+	evaluate := func(rules []SellRuleConfig) box.SellDecision {
+		candles := []*box.Candle{
+			{Close: 100, CloseOrigin: 100, Date: "2026-01-01"},
+			{Close: 100, CloseOrigin: 100, Date: "2026-01-02"},
+		}
+		ctx := box.NewTradingContext(candles, nil)
+		ctx.Position = 1
+		pos := box.NewTradePosition("T1", "TestStrategy", 0, 100, 100, "2026-01-01")
+		return EvaluateSellSignalsWithRules(ctx, pos, DefaultSellSettings(), rules)
+	}
+
+	for i, tc := range []struct {
+		rules []SellRuleConfig
+		want  string
+	}{{rulesA, "StrategyAExit"}, {rulesB, "StrategyBExit"}, {rulesA, "StrategyAExit"}} {
+		got := evaluate(tc.rules)
+		if !got.ShouldSell || got.PrimaryReason != tc.want {
+			t.Fatalf("호출 %d: ShouldSell=%v reason=%q, want %q", i+1, got.ShouldSell, got.PrimaryReason, tc.want)
+		}
+	}
+}
+
 // TestExecutePartialSell 은 weight 비율 기반 부분 매도 동작과 잔량 추적을 확인.
 func TestExecutePartialSell(t *testing.T) {
 	candles := []*box.Candle{

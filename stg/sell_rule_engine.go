@@ -33,15 +33,24 @@ type SellStrategyFile struct {
 	SellRules []SellRuleConfig `yaml:"sell_rules"`
 }
 
+// SellStrategy 는 한 매도 전략의 설정과 룰을 함께 보관하는 불변 실행 단위다.
+// AnalyzeFull처럼 여러 전략을 한 프로세스에서 번갈아 평가하는 경로는 이 값을
+// 명시적으로 전달해야 하며, 패키지 전역 activeSellRules에 의존하면 안 된다.
+type SellStrategy struct {
+	SourcePath string
+	Settings   SellSettings
+	Rules      []SellRuleConfig
+}
+
 // SellSettingsYAML 은 YAML에서 받는 전역 설정 (DefaultSellSettings에 덮어쓴다).
 type SellSettingsYAML struct {
-	MaxHoldingPeriod        *int                  `yaml:"max_holding_period"`
-	MinHoldingPeriod        *int                  `yaml:"min_holding_period"`
-	AutoLiquidateOnExpiry   *bool                 `yaml:"auto_liquidate_on_expiry"`
-	DefaultSellWeight       *float64              `yaml:"default_sell_weight"`
-	SmallRemainingThreshold *float64              `yaml:"small_remaining_threshold"`
-	MinimumExecutionSize    *float64              `yaml:"minimum_execution_size"`
-	CriticalFailure         *CriticalFailureYAML  `yaml:"critical_failure"`
+	MaxHoldingPeriod        *int                 `yaml:"max_holding_period"`
+	MinHoldingPeriod        *int                 `yaml:"min_holding_period"`
+	AutoLiquidateOnExpiry   *bool                `yaml:"auto_liquidate_on_expiry"`
+	DefaultSellWeight       *float64             `yaml:"default_sell_weight"`
+	SmallRemainingThreshold *float64             `yaml:"small_remaining_threshold"`
+	MinimumExecutionSize    *float64             `yaml:"minimum_execution_size"`
+	CriticalFailure         *CriticalFailureYAML `yaml:"critical_failure"`
 }
 
 // CriticalFailureYAML 은 IsCriticalFailure 임계값 YAML 오버라이드.
@@ -65,20 +74,21 @@ type CompositeYAML struct {
 	WeightWeak              *float64 `yaml:"weight_weak"`
 }
 
-// activeSellRules 는 LoadSellStrategy에서 채워지는 활성 매도 룰 목록.
+// activeSellRules 는 레거시 Analyze/AnalyzeWithRules 경로의 활성 매도 룰 목록.
+// 다중 전략 경로는 SellStrategy를 AnalyzeFull에 명시적으로 전달한다.
 var activeSellRules []SellRuleConfig
 
-// LoadSellStrategy 는 YAML에서 매도 룰과 설정을 로드한다.
-// 반환된 SellSettings는 DefaultSellSettings + YAML 오버라이드 결과.
-func LoadSellStrategy(path string) (SellSettings, error) {
+// LoadSellStrategyDefinition 은 YAML에서 매도 룰과 설정을 하나의 전략 객체로 로드한다.
+// 패키지 전역 상태를 변경하지 않으므로 여러 전략을 동시에 보관하거나 병렬 평가해도 안전하다.
+func LoadSellStrategyDefinition(path string) (SellStrategy, error) {
 	settings := DefaultSellSettings()
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return settings, fmt.Errorf("매도 전략 로드 실패 (%s): %w", path, err)
+		return SellStrategy{}, fmt.Errorf("매도 전략 로드 실패 (%s): %w", path, err)
 	}
 	var sf SellStrategyFile
 	if err := yaml.Unmarshal(data, &sf); err != nil {
-		return settings, fmt.Errorf("매도 전략 YAML 파싱 실패: %w", err)
+		return SellStrategy{}, fmt.Errorf("매도 전략 YAML 파싱 실패: %w", err)
 	}
 
 	// 글로벌 설정 오버라이드
@@ -143,22 +153,38 @@ func LoadSellStrategy(path string) (SellSettings, error) {
 		}
 	}
 
-	activeSellRules = sf.SellRules
+	return SellStrategy{SourcePath: path, Settings: settings, Rules: sf.SellRules}, nil
+}
+
+// LoadSellStrategy 는 기존 단일 전략 Analyze/AnalyzeWithRules 경로를 위한 호환 로더다.
+// 다중 전략을 한 프로세스에서 평가할 때는 LoadSellStrategyDefinition + AnalyzeFull을 사용한다.
+func LoadSellStrategy(path string) (SellSettings, error) {
+	strategy, err := LoadSellStrategyDefinition(path)
+	if err != nil {
+		return DefaultSellSettings(), err
+	}
+	activeSellRules = strategy.Rules
 	fmt.Printf("[stg] 매도 전략 %d개 로드: %s\n", len(activeSellRules), path)
-	return settings, nil
+	return strategy.Settings, nil
 }
 
 // EvaluateSellSignals 는 한 포지션에 대해 모든 매도 룰을 평가하고
 // 5-Path 결정 엔진을 거쳐 SellDecision을 반환한다 (C# SLogic + DecisionEngine 통합).
 func EvaluateSellSignals(ctx *box.TradingContext, pos *box.TradePosition, s SellSettings) box.SellDecision {
-	if len(activeSellRules) == 0 {
+	return EvaluateSellSignalsWithRules(ctx, pos, s, activeSellRules)
+}
+
+// EvaluateSellSignalsWithRules 는 호출자가 명시한 룰만 사용해 매도를 평가한다.
+// listen의 다중 전략처럼 한 프로세스에 여러 매도 전략이 공존할 때 전역 룰 오염을 막는다.
+func EvaluateSellSignalsWithRules(ctx *box.TradingContext, pos *box.TradePosition, s SellSettings, rules []SellRuleConfig) box.SellDecision {
+	if len(rules) == 0 {
 		return box.NoSellDecision("매도 룰 미로드")
 	}
 
 	// ===== Phase 1: 모든 룰 평가 + 신호 수집 =====
-	signals := make([]box.SellSignal, 0, len(activeSellRules))
+	signals := make([]box.SellSignal, 0, len(rules))
 	inGracePeriod := s.MinHoldingPeriod > 0 && ctx.Position-pos.BuyPosition < s.MinHoldingPeriod
-	for _, rule := range activeSellRules {
+	for _, rule := range rules {
 		// 손절 유예 기간: Critical/Loss 룰은 트리거·트래킹 모두 건너뛴다 (Profit/Technical/Expiry는 정상 평가)
 		if inGracePeriod && isLossCutCategory(rule.Category) {
 			signals = append(signals, box.SellSignal{

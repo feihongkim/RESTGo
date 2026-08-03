@@ -48,25 +48,28 @@ func LoadSellStrategyFile(path string) error {
 // AnalyzeWithRules 는 명시적 rules/settings로 분석한다 (그리드 러너용).
 // 매도 설정은 전역 activeSellSettings를 쓴다 — 매도까지 명시하려면 AnalyzeFull을 쓸 것.
 func AnalyzeWithRules(candles []*box.Candle, rules []RuleConfig, settings Settings) AnalysisResult {
-	return analyzeInternal(candles, settings, rules, activeSellSettings)
+	return analyzeInternal(candles, settings, rules, activeSellSettings, activeSellRules)
 }
 
-// AnalyzeFull 은 매수·매도 설정을 모두 명시적으로 받는다.
+// AnalyzeFull 은 매수 룰/설정과 매도 전략(룰+설정)을 모두 명시적으로 받는다.
 //
-// 전역(activeSellSettings)을 건드리지 않으므로 서로 다른 매도 전략을 번갈아 평가할 때
-// 파일을 다시 읽거나 전역을 갈아끼울 필요가 없고, 병렬 호출도 안전하다.
+// 전역(activeSellSettings/activeSellRules)을 건드리지 않으므로 서로 다른 매도 전략을
+// 번갈아 평가할 때 파일을 다시 읽거나 전역을 갈아끼울 필요가 없고, 병렬 호출도 안전하다.
 // sell이 nil이면 매도 평가를 하지 않는다 (per_candle 청산은 그대로 동작).
-func AnalyzeFull(candles []*box.Candle, rules []RuleConfig, settings Settings, sell *SellSettings) AnalysisResult {
-	return analyzeInternal(candles, settings, rules, sell)
+func AnalyzeFull(candles []*box.Candle, rules []RuleConfig, settings Settings, sell *SellStrategy) AnalysisResult {
+	if sell == nil {
+		return analyzeInternal(candles, settings, rules, nil, nil)
+	}
+	return analyzeInternal(candles, settings, rules, &sell.Settings, sell.Rules)
 }
 
 // Analyze 는 캔들 리스트에 대해 Box/DefBox 분석을 수행하고 매수 신호를 반환
 func Analyze(candles []*box.Candle, settings Settings) AnalysisResult {
-	return analyzeInternal(candles, settings, activeRules, activeSellSettings)
+	return analyzeInternal(candles, settings, activeRules, activeSellSettings, activeSellRules)
 }
 
 // analyzeInternal 은 Analyze/AnalyzeWithRules 공용 구현체.
-func analyzeInternal(candles []*box.Candle, settings Settings, rules []RuleConfig, sell *SellSettings) AnalysisResult {
+func analyzeInternal(candles []*box.Candle, settings Settings, rules []RuleConfig, sell *SellSettings, sellRules []SellRuleConfig) AnalysisResult {
 	if len(candles) < 6 {
 		return AnalysisResult{}
 	}
@@ -152,7 +155,7 @@ func analyzeInternal(candles []*box.Candle, settings Settings, rules []RuleConfi
 				if !p.IsActive || p.IsPerCandle {
 					continue
 				}
-				decision := EvaluateSellSignals(ctx, p, *sell)
+				decision := EvaluateSellSignalsWithRules(ctx, p, *sell, sellRules)
 				if decision.ShouldSell {
 					ExecutePartialSell(ctx, p, decision.PrimaryReason, decision.SellWeight, *sell)
 				} else if decision.RequiresHoldingExtensionUpdate {

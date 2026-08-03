@@ -97,7 +97,7 @@ func handleListen(args []string) {
 		sellPath string
 		rules    []stg.RuleConfig
 		settings stg.Settings
-		sell     *stg.SellSettings
+		sell     *stg.SellStrategy
 	}
 	pairs := []*pair{
 		{label: "S1_S03S23", buyPath: "rules/strategy1_s03s23.yaml", sellPath: "rules/sell_s03s23.yaml"},
@@ -110,7 +110,7 @@ func handleListen(args []string) {
 			return
 		}
 		p.rules, p.settings = rules, settings
-		sell, serr := stg.LoadSellStrategy(p.sellPath)
+		sell, serr := stg.LoadSellStrategyDefinition(p.sellPath)
 		if serr != nil {
 			fmt.Fprintf(os.Stderr, "[listen] 매도 전략 로드 실패 (%s): %v\n", p.sellPath, serr)
 			return
